@@ -17,7 +17,6 @@ export default function StaffPage() {
   const [addForm, setAddForm] = useState({
     fullName: '',
     email: '',
-    password: '',
     role: 'staff' as string,
     department: '',
   })
@@ -45,8 +44,8 @@ export default function StaffPage() {
 
   const createStaff = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!addForm.email || !addForm.password || !addForm.fullName) {
-      alert('Please fill in full name, email, and password.')
+    if (!addForm.email || !addForm.fullName) {
+      alert('Please fill in full name and email.')
       return
     }
     // Only admins can create admin/director accounts; staff creation is open to admins/directors
@@ -56,31 +55,21 @@ export default function StaffPage() {
     }
     setSaving('create')
     try {
-      const { data: authData, error: authError } = await supabase.auth.admin
-        .createUser({ email: addForm.email, password: addForm.password, email_confirm: true })
-      if (authError) throw authError
-      const userId = authData.user?.id
-      if (!userId) throw new Error('No user returned')
-
-      const { error: profileError } = await supabase.from('profiles').insert([
-        {
-          id: userId,
+      // All account creation goes through the staff-provision Edge Function,
+      // which uses the Supabase Admin API server-side and sends a secure
+      // invitation email (no password is ever handled by the frontend).
+      const { error } = await supabase.functions.invoke('staff-provision', {
+        body: {
+          action: 'create',
           email: addForm.email,
-          full_name: addForm.fullName,
+          fullName: addForm.fullName,
           role: addForm.role,
-          department_id: addForm.department || null,
-          is_active: true,
+          departmentId: addForm.department || null,
         },
-      ])
-      if (profileError) throw profileError
+      })
+      if (error) throw error
 
-      await supabase.from('staff_audit_log').insert([{
-        staff_id: userId,
-        action: 'created',
-        new_value: addForm.role,
-      }])
-
-      setAddForm({ fullName: '', email: '', password: '', role: 'staff', department: '' })
+      setAddForm({ fullName: '', email: '', role: 'staff', department: '' })
       setOpenAdd(false)
       load()
     } catch (err: any) {
@@ -97,9 +86,14 @@ export default function StaffPage() {
     }
     setSaving(id)
     try {
-      const { error } = await supabase.from('profiles').update({ role }).eq('id', id)
+      const { error } = await supabase.functions.invoke('staff-provision', {
+        body: {
+          action: 'update_role',
+          targetUserId: id,
+          role,
+        },
+      })
       if (error) throw error
-      await supabase.from('staff_audit_log').insert([{ staff_id: id, action: 'role_changed', new_value: role }])
       load()
     } catch (err: any) {
       alert(err.message || 'Failed to update role')
@@ -111,13 +105,13 @@ export default function StaffPage() {
   const toggleActive = async (id: string, currentlyActive: boolean) => {
     setSaving(id)
     try {
-      const { error } = await supabase.from('profiles').update({ is_active: !currentlyActive }).eq('id', id)
+      const { error } = await supabase.functions.invoke('staff-provision', {
+        body: {
+          action: currentlyActive ? 'deactivate' : 'reactivate',
+          targetUserId: id,
+        },
+      })
       if (error) throw error
-      await supabase.from('staff_audit_log').insert([{
-        staff_id: id,
-        action: currentlyActive ? 'deactivated' : 'reactivated',
-        new_value: !currentlyActive ? 'active' : 'inactive',
-      }])
       load()
     } catch (err: any) {
       alert(err.message || 'Failed to update status')
@@ -130,7 +124,14 @@ export default function StaffPage() {
     if (!confirm('Delete this staff account? This cannot be undone.')) return
     setSaving(id)
     try {
-      const { error } = await supabase.from('profiles').delete().eq('id', id)
+      // All account deletion goes through the staff-provision Edge Function,
+      // which removes both the profile and the Auth user and writes an audit entry.
+      const { error } = await supabase.functions.invoke('staff-provision', {
+        body: {
+          action: 'delete',
+          targetUserId: id,
+        },
+      })
       if (error) throw error
       load()
     } catch (err: any) {
@@ -288,16 +289,6 @@ export default function StaffPage() {
                   value={addForm.email}
                   onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
                   placeholder="email@iriad.example"
-                />
-              </div>
-              <div>
-                <label className="label block mb-1">Password</label>
-                <input
-                  className="input"
-                  type="password"
-                  value={addForm.password}
-                  onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-                  placeholder="••••••••"
                 />
               </div>
               <div>

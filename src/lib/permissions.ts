@@ -15,8 +15,9 @@ export function roleRank(role: Role | null | undefined): number {
 
 export function canManage(role: Role | null, targetRole: Role | null): boolean {
   if (!role) return false
-  // Admin and Director can manage Staff; neither can promote/demote to Admin/Director
-  if (role === 'admin' || role === 'director') {
+  // Admin can manage any role; Director can manage Staff only; Staff manages nobody
+  if (role === 'admin') return true
+  if (role === 'director') {
     return targetRole === 'staff' || targetRole === null
   }
   return false

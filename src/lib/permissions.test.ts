@@ -33,12 +33,12 @@ describe('permissions — role helpers', () => {
     expect(isAdminOrDirector(null)).toBe(false)
   })
 
-  it('canManage: admin and director manage staff only', () => {
+  it('canManage: admin manages any role; director manages staff only', () => {
     expect(canManage('admin', 'staff')).toBe(true)
+    expect(canManage('admin', 'director')).toBe(true)
+    expect(canManage('admin', 'admin')).toBe(true)
     expect(canManage('director', 'staff')).toBe(true)
-    expect(canManage('admin', 'director')).toBe(false)
     expect(canManage('director', 'admin')).toBe(false)
-    expect(canManage('admin', 'admin')).toBe(false)
     expect(canManage('director', 'director')).toBe(false)
   })
 
