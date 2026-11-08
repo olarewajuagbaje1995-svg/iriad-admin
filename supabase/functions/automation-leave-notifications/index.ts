@@ -6,6 +6,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-leave-notifications
  *
@@ -21,7 +26,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 serve(async (req) => {
   try {
     const { job } = await req.json();
-    const now = new Date().toISOString();
+    const now = nowLagos().toISOString();
 
     // Idempotency guard
     const { data: idem } = await supabase
@@ -51,7 +56,7 @@ serve(async (req) => {
       .from("profiles")
       .select("id, full_name")
       .eq("organisation_id", orgId)
-      .in("role", ["super_admin", "staff_admin"]);
+      .in("role", ["admin", "director"]);
 
     if (pendingLeave && pendingLeave.length > 0 && admins && admins.length > 0) {
       const adminNotifications = admins.flatMap((admin: any) =>

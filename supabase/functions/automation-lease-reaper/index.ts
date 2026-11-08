@@ -6,6 +6,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-lease-reaper
  *
@@ -21,7 +26,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
  */
 serve(async (req) => {
   try {
-    const now = new Date().toISOString();
+    const now = nowLagos().toISOString();
 
     // Find Running jobs with expired leases
     const { data: expiredJobs, error } = await supabase

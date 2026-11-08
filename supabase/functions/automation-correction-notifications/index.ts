@@ -21,7 +21,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 serve(async (req) => {
   try {
     const { job } = await req.json();
-    const now = new Date().toISOString();
+    const now = nowLagos().toISOString();
 
     // Idempotency guard
     const { data: idem } = await supabase
@@ -51,7 +51,7 @@ serve(async (req) => {
       .from("profiles")
       .select("id, full_name")
       .eq("organisation_id", orgId)
-      .in("role", ["super_admin", "staff_admin"]);
+      .in("role", ["admin", "director"]);
 
     if (pendingCorrections && pendingCorrections.length > 0 && admins && admins.length > 0) {
       const adminNotifications = admins.flatMap((admin: any) =>

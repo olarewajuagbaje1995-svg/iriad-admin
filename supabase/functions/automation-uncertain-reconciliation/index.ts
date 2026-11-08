@@ -8,6 +8,11 @@ const N8N_WEBHOOK_SECRET = Deno.env.get("N8N_WEBHOOK_SECRET") || "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-uncertain-reconciliation
  *
@@ -27,7 +32,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
  */
 serve(async (req) => {
   try {
-    const now = new Date().toISOString();
+    const now = nowLagos().toISOString();
 
     // Find uncertain jobs (dispatched to n8n, no terminal callback, lease expired)
     const { data: uncertainJobs, error: fetchError } = await supabase

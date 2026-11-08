@@ -8,6 +8,11 @@ const N8N_WEBHOOK_SECRET = Deno.env.get("N8N_WEBHOOK_SECRET") || "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-dispatcher
  *
@@ -41,7 +46,7 @@ serve(async (req) => {
     }
 
     const job = jobs;
-    const startedAt = new Date().toISOString();
+    const startedAt = nowLagos().toISOString();
 
     // Record execution attempt
     await supabase.from("automation_executions").insert({
@@ -69,7 +74,7 @@ serve(async (req) => {
       success = false;
     }
 
-    const completedAt = new Date().toISOString();
+    const completedAt = nowLagos().toISOString();
 
     // Update job terminal state
     if (success) {

@@ -6,6 +6,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-n8n-register
  *
@@ -29,7 +34,7 @@ serve(async (req) => {
   try {
     const body = await req.json();
     const jobs = Array.isArray(body) ? body : [body];
-    const now = new Date().toISOString();
+    const now = nowLagos().toISOString();
 
     const results = [];
 

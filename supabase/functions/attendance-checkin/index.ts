@@ -88,11 +88,11 @@ serve(async (req: Request) => {
     const grace = policy.grace_period_minutes ?? 0
 
     // Build the effective check-in timestamp (Lagos time)
-    const nowLagos = new Date()
+    const now = nowLagos()
     // Check if we're within the allowed check-in window
     const [openH, openM] = openTime.split(':').map(Number)
     const [closeH, closeM] = closeTime.split(':').map(Number)
-    const checkInTime = nowLagos.getHours() * 60 + nowLagos.getMinutes()
+    const checkInTime = now.getHours() * 60 + now.getMinutes()
     const openMinutes = openH * 60 + openM
     const closeMinutes = closeH * 60 + closeM + grace
 
@@ -118,20 +118,43 @@ serve(async (req: Request) => {
     const threshold = policy.on_time_threshold_minutes ?? 0
     const isLate = checkInTime > openMinutes + threshold
 
-    // Upsert attendance (unique org+staff+date)
+    // Check for existing attendance record (prevent duplicate check-in overwrite)
+    const { data: existing } = await supabaseClient
+      .from('attendance')
+      .select('id, check_in_at, status')
+      .eq('organisation_id', orgId)
+      .eq('staff_id', user.id)
+      .eq('attendance_date', targetDate)
+      .maybeSingle()
+
+    if (existing) {
+      return new Response(JSON.stringify({
+        error: 'Already checked in today',
+        attendance_id: existing.id,
+        check_in_at: existing.check_in_at,
+        status: existing.status,
+      }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Insert attendance record (no upsert — duplicate prevented above; DB unique
+    // constraint on (organisation_id, staff_id, attendance_date) is the backstop)
     const { data: attendance, error: attError } = await supabaseClient
       .from('attendance')
-      .upsert([{
+      .insert([{
         organisation_id: orgId,
         staff_id: user.id,
         attendance_date: targetDate,
-        check_in_at: nowLagos.toISOString(),
+        check_in_at: nowLagos().toISOString(),
         attendance_type,
         check_in_note,
         status: isLate ? 'late' : 'checked_in',
         is_late: isLate,
-        updated_at: nowLagos.toISOString(),
-      }], { onConflict: 'organisation_id,staff_id,attendance_date' })
+        created_at: nowLagos().toISOString(),
+        updated_at: nowLagos().toISOString(),
+      }])
       .select().single()
 
     if (attError) throw attError

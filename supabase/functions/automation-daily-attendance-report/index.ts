@@ -6,6 +6,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-daily-attendance-report
  *
@@ -23,8 +28,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 serve(async (req) => {
   try {
     const { job } = await req.json();
-    const now = new Date().toISOString();
-    const workDate = new Date(job.scheduled_at).toISOString().slice(0, 10);
+    const now = nowLagos().toISOString();
+    const workDate = new Date(new Date(job.scheduled_at).toLocaleString('en-US', { timeZone: 'Africa/Lagos' })).toISOString().slice(0, 10);
 
     // Idempotency guard
     const { data: idem } = await supabase

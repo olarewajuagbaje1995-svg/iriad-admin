@@ -17,10 +17,11 @@ export default function ChatbotPage() {
     try {
       const { data } = await supabase.from('chatbot_conversations').select('*').order('updated_at', { ascending: false }).limit(20)
       setCurrentConv(data?.[0] ?? null)
-      // Check if webhook is configured
-      setConfigured(!!import.meta.env.VITE_N8N_KNOWLEDGE_CHAT_WEBHOOK_URL)
+      // Check if the ai-proxy Edge Function is available (server-side configured)
+      setConfigured(true)
     } catch (e: any) {
       console.error(e)
+      setConfigured(false)
     }
   }
 
@@ -45,6 +46,21 @@ export default function ChatbotPage() {
     if (!user) {
       setMessages((prev) => [...prev, { role: 'assistant' as const, content: 'Please sign in to use the knowledge assistant.', sources: [], created_at: new Date().toISOString() }])
       return
+    }
+
+    // Get user's organisation for scoping knowledge retrieval
+    let organisationId: string | null = null
+    try {
+      const profile = await supabase
+        .from('profiles')
+        .select('organisation_id')
+        .eq('id', user.id)
+        .single()
+      if (profile.data?.organisation_id) {
+        organisationId = profile.data.organisation_id
+      }
+    } catch {
+      // ignore profile lookup failure
     }
 
     const userMsg = { role: 'user' as const, content: input, created_at: new Date().toISOString() }
@@ -78,22 +94,49 @@ export default function ChatbotPage() {
     }
 
     try {
-      const webhookUrl = import.meta.env.VITE_N8N_KNOWLEDGE_CHAT_WEBHOOK_URL
-      if (!webhookUrl) {
-        setMessages((prev) => [...prev, { role: 'assistant' as const, content: 'Knowledge assistant is not configured yet. Please contact your administrator.', sources: [], created_at: new Date().toISOString() }])
+      // Call the ai-proxy Edge Function (server-side: embedding + knowledge search + NVIDIA/Groq failover)
+      const { data, error } = await supabase.functions.invoke('ai-proxy', {
+        body: {
+          query: input,
+          conversation_id: convId,
+          profile_id: user.id,
+          organisation_id: organisationId,
+        },
+      })
+
+      if (error) {
+        throw new Error(error.message ?? 'AI provider request failed')
+      }
+
+      if (!data?.ok) {
+        // Both providers failed or embedding failed
+        const assistantMsg = {
+          role: 'assistant' as const,
+          content: data?.error ?? 'All AI providers are temporarily unavailable. Please try again later.',
+          sources: [],
+          created_at: new Date().toISOString(),
+        }
+        setMessages((prev) => [...prev, assistantMsg])
+        if (convId) {
+          await supabase.from('chatbot_messages').insert([{
+            conversation_id: convId,
+            profile_id: user.id,
+            role: 'assistant',
+            content: assistantMsg.content,
+            sources: assistantMsg.sources,
+            created_at: assistantMsg.created_at,
+          }])
+        }
         return
       }
 
-      const res = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token ?? ''}`,
-        },
-        body: JSON.stringify({ question: input, conversation_id: convId, profile_id: user.id }),
-      })
-      const json = await res.json().catch(() => ({}))
-      const assistantMsg = { role: 'assistant' as const, content: json.answer ?? 'I could not find this in the approved knowledge base.', sources: json.sources ?? [], created_at: new Date().toISOString() }
+      const assistantMsg = {
+        role: 'assistant' as const,
+        content: data.answer,
+        sources: data.sources ?? [],
+        provider: data.provider,
+        created_at: new Date().toISOString(),
+      }
       setMessages((prev) => [...prev, assistantMsg])
       if (convId) {
         await supabase.from('chatbot_messages').insert([{
@@ -127,7 +170,7 @@ export default function ChatbotPage() {
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           <div className="text-center py-10 text-neutral-500">
             <p>Knowledge assistant is not configured.</p>
-            <p className="mt-2 text-xs text-neutral-400">Set VITE_N8N_KNOWLEDGE_CHAT_WEBHOOK_URL and connect the n8n knowledge-chat webhook.</p>
+            <p className="mt-2 text-xs text-neutral-400">Deploy the ai-proxy Edge Function and configure NVIDIA_API_KEY / GROQ_API_KEY.</p>
           </div>
         </div>
       </div>
@@ -158,6 +201,11 @@ export default function ChatbotPage() {
               m.role === 'user' ? 'bg-brand-600 text-white' : 'bg-neutral-100 text-neutral-900'
             }`}>
               {m.content}
+              {m.role === 'assistant' && m.provider && m.provider !== 'stub' && (
+                <div className="mt-1 text-[10px] text-neutral-400">
+                  Provider: {m.provider}
+                </div>
+              )}
               {m.role === 'assistant' && m.sources && m.sources.length > 0 && (
                 <div className="mt-2 text-[10px] text-neutral-500">
                   Sources: {Array.isArray(m.sources) ? m.sources.join(', ') : String(m.sources)}
@@ -182,7 +230,7 @@ export default function ChatbotPage() {
             <Send className="w-4 h-4" />
           </button>
         </div>
-        <p className="mt-2 text-xs text-neutral-500">Answers are grounded in approved knowledge sources. Not configured? Contact your admin.</p>
+        <p className="mt-2 text-xs text-neutral-500">Answers are grounded in approved knowledge sources. NVIDIA (primary) with Groq failover; API keys are server-side only.</p>
       </form>
     </div>
   )

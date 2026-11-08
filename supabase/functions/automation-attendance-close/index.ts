@@ -6,6 +6,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-attendance-close
  *
@@ -22,8 +27,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 serve(async (req) => {
   try {
     const { job } = await req.json();
-    const now = new Date().toISOString();
-    const workDate = new Date(job.scheduled_at).toISOString().slice(0, 10);
+    const now = nowLagos();
+    const nowISO = now.toISOString();
+    // Use the job's scheduled_at (Lagos) to derive the work date in Lagos time
+    const workDate = new Date(new Date(job.scheduled_at).toLocaleString('en-US', { timeZone: 'Africa/Lagos' })).toISOString().slice(0, 10);
 
     // Idempotency guard
     const { data: idem } = await supabase
@@ -41,8 +48,8 @@ serve(async (req) => {
       .upsert({
         organisation_id: job.organisation_id,
         work_date: workDate,
-        morning_closed_at: now,
-        updated_at: now,
+        morning_closed_at: nowISO,
+        updated_at: nowISO,
       }, { onConflict: "organisation_id,work_date" })
       .select()
       .single();
@@ -50,7 +57,7 @@ serve(async (req) => {
     if (error) throw error;
 
     // Mark late check-ins (checked in after morning close time)
-    const closeTime = now.slice(11, 16);
+    const closeTime = nowISO.slice(11, 16);
     await supabase
       .from("attendance")
       .update({ is_late: true, status: "late" })
@@ -65,7 +72,7 @@ serve(async (req) => {
       type: "attendance_closed",
       title: "Attendance closed",
       body: `Check-in window closed for ${workDate}`,
-      created_at: now,
+      created_at: nowISO,
     });
 
     // Mark idempotency completed
@@ -75,7 +82,7 @@ serve(async (req) => {
       organisation_id: job.organisation_id,
       status: "completed",
       result: { session_id: session.id, work_date: workDate },
-      completed_at: now,
+      completed_at: nowISO,
     }, { onConflict: "idempotency_key" });
 
     return json({ ok: true, sessionId: session.id, workDate });

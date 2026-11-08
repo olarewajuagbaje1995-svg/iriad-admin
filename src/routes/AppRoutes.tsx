@@ -1,30 +1,32 @@
+import { lazy } from 'react'
 import { createBrowserRouter } from 'react-router-dom'
 import AppLayout from '@/components/layout/AppLayout'
 import ProtectedRoute from '@/routes/ProtectedRoute'
-import LoginPage from '@/features/auth/LoginPage'
-import DashboardPage from '@/features/dashboard/DashboardPage'
-import AdminDashboardPage from '@/features/dashboard/AdminDashboardPage'
-import DirectorDashboardPage from '@/features/dashboard/DirectorDashboardPage'
-import AttendancePage from '@/features/attendance/AttendancePage'
-import LeavePage from '@/features/attendance/LeavePage'
-import TasksPage from '@/features/tasks/TasksPage'
-import ReportsPage from '@/features/reports/ReportsPage'
-import ChatPage from '@/features/chat/ChatPage'
-import AnnouncementsPage from '@/features/announcements/AnnouncementsPage'
-import DocumentsPage from '@/features/documents/DocumentsPage'
-import CalendarPage from '@/features/calendar/CalendarPage'
-import KnowledgeBasePage from '@/features/knowledge-base/KnowledgeBasePage'
-import ChatbotPage from '@/features/chatbot/ChatbotPage'
-import NotificationsPage from '@/features/notifications/NotificationsPage'
-import AccountSettingsPage from '@/features/settings/AccountSettingsPage'
-import StaffPage from '@/features/admin/StaffPage'
-import AttendanceControlPage from '@/features/admin/AttendanceControlPage'
-import ApprovalCentrePage from '@/features/admin/ApprovalCentrePage'
-import AutomationControlCentrePage from '@/features/admin/AutomationControlCentrePage'
-import AttendanceCorrectionsPage from '@/features/attendance/AttendanceCorrectionsPage'
-import ProjectsPage from '@/features/projects/ProjectsPage'
-import ProjectTableBuilderPage from '@/features/projects/ProjectTableBuilderPage'
 import { useAuth } from '@/hooks/useAuth'
+
+const LoginPage = lazy(() => import('@/features/auth/LoginPage'))
+const DashboardPage = lazy(() => import('@/features/dashboard/DashboardPage'))
+const AdminDashboardPage = lazy(() => import('@/features/dashboard/AdminDashboardPage'))
+const DirectorDashboardPage = lazy(() => import('@/features/dashboard/DirectorDashboardPage'))
+const AttendancePage = lazy(() => import('@/features/attendance/AttendancePage'))
+const LeavePage = lazy(() => import('@/features/attendance/LeavePage'))
+const AttendanceCorrectionsPage = lazy(() => import('@/features/attendance/AttendanceCorrectionsPage'))
+const TasksPage = lazy(() => import('@/features/tasks/TasksPage'))
+const ReportsPage = lazy(() => import('@/features/reports/ReportsPage'))
+const ChatPage = lazy(() => import('@/features/chat/ChatPage'))
+const AnnouncementsPage = lazy(() => import('@/features/announcements/AnnouncementsPage'))
+const DocumentsPage = lazy(() => import('@/features/documents/DocumentsPage'))
+const CalendarPage = lazy(() => import('@/features/calendar/CalendarPage'))
+const KnowledgeBasePage = lazy(() => import('@/features/knowledge-base/KnowledgeBasePage'))
+const ChatbotPage = lazy(() => import('@/features/chatbot/ChatbotPage'))
+const NotificationsPage = lazy(() => import('@/features/notifications/NotificationsPage'))
+const AccountSettingsPage = lazy(() => import('@/features/settings/AccountSettingsPage'))
+const StaffPage = lazy(() => import('@/features/admin/StaffPage'))
+const AttendanceControlPage = lazy(() => import('@/features/admin/AttendanceControlPage'))
+const ApprovalCentrePage = lazy(() => import('@/features/admin/ApprovalCentrePage'))
+const AutomationControlCentrePage = lazy(() => import('@/features/admin/AutomationControlCentrePage'))
+const ProjectsPage = lazy(() => import('@/features/projects/ProjectsPage'))
+const ProjectTableBuilderPage = lazy(() => import('@/features/projects/ProjectTableBuilderPage'))
 
 function NotFound() {
   return (

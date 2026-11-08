@@ -6,14 +6,19 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-staff-checkin
  *
  * Phase 3 native backup engine — business operation #3 (staff check-in).
  *
  * Enforces the 08:00–09:00 Africa/Lagos check-in window plus holiday/workday
- * checks via attendance_policy and working_calendar. Upserts the attendance
- * record (unique org + staff + date).
+ * checks via attendance_policy and working_calendar. Inserts the attendance
+ * record (unique org + staff + date) without overwriting an existing check-in.
  *
  * Idempotent: same idempotency_key won't double-check-in.
  *
@@ -22,8 +27,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 serve(async (req) => {
   try {
     const { job } = await req.json();
-    const now = new Date().toISOString();
-    const workDate = new Date().toISOString().slice(0, 10);
+    const now = nowLagos();
+    const workDate = now.toISOString().slice(0, 10);
 
     // Idempotency guard
     const { data: idem } = await supabase
@@ -47,8 +52,8 @@ serve(async (req) => {
     const workingDays = policy?.working_days ?? [1, 2, 3, 4, 5];
     const graceMinutes = policy?.grace_period_minutes ?? 0;
 
-    // Check working day
-    const dayOfWeek = new Date().getUTCDay(); // 0=Sun ... 6=Sat
+    // Check working day using Lagos wall-clock time (Monday=1 ... Sunday=7)
+    const dayOfWeek = now.getDay() || 7;
     const isWorkDay = workingDays.includes(dayOfWeek === 0 ? 7 : dayOfWeek);
     if (!isWorkDay) {
       return json({ ok: true, skipped: true, reason: "non_workday" });
@@ -66,7 +71,7 @@ serve(async (req) => {
     }
 
     // Check check-in window (08:00–09:00 + grace for late tolerance only)
-    const nowTime = now.slice(11, 16); // "HH:MM"
+    const nowTime = now.toISOString().slice(11, 16); // "HH:MM" in Lagos time
     if (nowTime < openTime || nowTime > closeTime) {
       return json({
         ok: false,
@@ -84,19 +89,40 @@ serve(async (req) => {
       return json({ ok: false, error: "staff_id not provided in job payload" }, 400);
     }
 
-    // Upsert attendance record (unique org + staff + date)
+    // Check for existing attendance record (prevent duplicate check-in overwrite)
+    const { data: existing } = await supabase
+      .from("attendance")
+      .select("id, check_in_at, status")
+      .eq("organisation_id", job.organisation_id)
+      .eq("staff_id", staffId)
+      .eq("attendance_date", workDate)
+      .maybeSingle();
+
+    if (existing) {
+      return json({
+        ok: false,
+        error: "Already checked in today",
+        attendance_id: existing.id,
+        check_in_at: existing.check_in_at,
+        status: existing.status,
+      }, 409);
+    }
+
+    // Insert attendance record (no upsert — duplicate prevented above; DB unique
+    // constraint on (organisation_id, staff_id, attendance_date) is the backstop)
     const { data: attendance, error } = await supabase
       .from("attendance")
-      .upsert({
+      .insert({
         organisation_id: job.organisation_id,
         staff_id: staffId,
         attendance_date: workDate,
-        check_in_at: now,
+        check_in_at: now.toISOString(),
         status: isLate ? "late" : "checked_in",
         is_late: isLate,
         attendance_type: "office",
-        updated_at: now,
-      }, { onConflict: "organisation_id,staff_id,attendance_date" })
+        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+      })
       .select()
       .single();
 
@@ -108,8 +134,8 @@ serve(async (req) => {
       business_operation: job.business_operation,
       organisation_id: job.organisation_id,
       status: "completed",
-      result: { attendance_id: attendance.id, check_in_at: now, is_late: isLate },
-      completed_at: now,
+      result: { attendance_id: attendance.id, check_in_at: now.toISOString(), is_late: isLate },
+      completed_at: now.toISOString(),
     }, { onConflict: "idempotency_key" });
 
     return json({ ok: true, attendanceId: attendance.id, isLate });

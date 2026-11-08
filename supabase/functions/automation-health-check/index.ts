@@ -9,6 +9,11 @@ const FAILURE_THRESHOLD = parseInt(Deno.env.get("N8N_FAILURE_THRESHOLD") || "3",
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-health-check
  *
@@ -25,7 +30,7 @@ serve(async (req) => {
     const n8nHealthy = await checkN8nHealth();
 
     // Upsert n8n engine health
-    const now = new Date().toISOString();
+    const now = nowLagos().toISOString();
     if (n8nHealthy) {
       await supabase
         .from("automation_engines")

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Menu, LogOut, Bell, Briefcase, Calendar, LayoutDashboard, Clock,
@@ -218,7 +218,15 @@ export default function AppLayout() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <Outlet />
+          <Suspense fallback={
+            <div className="flex h-[400px] items-center justify-center">
+              <div className="text-center py-10 text-neutral-500">
+                <p>Loading page…</p>
+              </div>
+            </div>
+          }>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

@@ -6,6 +6,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-attendance-open
  *
@@ -22,8 +27,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 serve(async (req) => {
   try {
     const { job } = await req.json();
-    const now = new Date().toISOString();
-    const workDate = new Date(job.scheduled_at).toISOString().slice(0, 10);
+    const now = nowLagos();
+    const nowISO = now.toISOString();
+    const workDate = new Date(new Date(job.scheduled_at).toLocaleString('en-US', { timeZone: 'Africa/Lagos' })).toISOString().slice(0, 10);
 
     // Idempotency guard
     const { data: idem } = await supabase
@@ -41,8 +47,8 @@ serve(async (req) => {
       .upsert({
         organisation_id: job.organisation_id,
         work_date: workDate,
-        morning_opened_at: now,
-        updated_at: now,
+        morning_opened_at: nowISO,
+        updated_at: nowISO,
       }, { onConflict: "organisation_id,work_date" })
       .select()
       .single();
@@ -55,7 +61,7 @@ serve(async (req) => {
       type: "attendance_opening",
       title: "Attendance opened",
       body: `Check-in window opened for ${workDate}`,
-      created_at: now,
+      created_at: nowISO,
     });
 
     // Mark idempotency completed (same transaction conceptually; here sequential)
@@ -65,7 +71,7 @@ serve(async (req) => {
       organisation_id: job.organisation_id,
       status: "completed",
       result: { session_id: session.id, work_date: workDate },
-      completed_at: now,
+      completed_at: nowISO,
     }, { onConflict: "idempotency_key" });
 
     return json({ ok: true, sessionId: session.id, workDate });

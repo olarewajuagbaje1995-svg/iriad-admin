@@ -65,13 +65,13 @@ export default function ChatPage() {
         supabase.removeChannel(channelRef.current)
       }
 
-      const channel = supabase.channel(`room:${currentRoom!.id}`)
+      const channel = supabase.channel(`room:${room.id}`)
       channelRef.current = channel
       channel
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${currentRoom!.id}` }, (payload: any) => {
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${room.id}` }, (payload: any) => {
           setMessages((prev) => [...prev, payload.new])
         })
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_message_reactions', filter: `room_id=eq.${currentRoom!.id}` }, (payload: any) => {
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_message_reactions', filter: `room_id=eq.${room.id}` }, (payload: any) => {
           setMessages((prev) => prev.map((m) => m.id === payload.new.message_id
             ? { ...m, chat_message_reactions: [...(m.chat_message_reactions ?? []), payload.new] }
             : m))

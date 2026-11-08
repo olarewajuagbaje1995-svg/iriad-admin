@@ -4,6 +4,10 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { supabase } from '@/lib/supabase'
 import { Plus, Trash2, RefreshCw, ShieldAlert, Database } from 'lucide-react'
 import { knowledgeSourceSchema, type KnowledgeSourceFormData } from '@/lib/validation'
+import {
+  ingestFile,
+  type IngestResult,
+} from '@/lib/knowledge'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_FILE_TYPES = [
@@ -121,17 +125,88 @@ export default function KnowledgeBasePage() {
       ])
       if (error) throw error
 
-      // Trigger n8n ingestion pipeline (extraction, chunking, embeddings)
+      const sourceId = (sourceData as unknown as any[])?.[0]?.id
+
+      // Run local ingestion pipeline (extraction → chunking → embedding → storage)
+      // instead of only delegating to n8n. n8n webhook remains as an optional
+      // secondary trigger; the local pipeline is the source of truth.
+      if (data.sourceType === 'file' && file) {
+        const ingestOptions = {
+          organisation_id: profile.organisation_id,
+          uploaded_by: user.id,
+          allowed_roles:
+            data.audience === 'selected_roles' ? allowedRoles : [],
+        }
+        const result: IngestResult = await ingestFile(file, ingestOptions)
+
+        if (!result.ok) {
+          await supabase
+            .from('knowledge_sources')
+            .update({
+              indexing_status: 'failed',
+              error_message: result.error,
+            })
+            .eq('id', sourceId)
+          setIngesting(false)
+          alert(`Ingestion failed: ${result.error}`)
+          return
+        }
+
+        await supabase
+          .from('knowledge_sources')
+          .update({
+            indexing_status: 'indexed',
+            error_message: null,
+          })
+          .eq('id', sourceId)
+      } else if (data.sourceType === 'text' || data.sourceType === 'faq') {
+        // For direct text/FAQ sources, store content as a single chunk
+        const { error: chunkErr } = await supabase.from('knowledge_chunks').insert([
+          {
+            document_id: sourceId,
+            content: sourceContent,
+            chunk_index: 0,
+            embedding: null,
+            metadata: {
+              source_type: data.sourceType,
+              title: data.title,
+              ingestion_method: 'text-direct',
+            },
+            organisation_id: profile.organisation_id,
+            allowed_roles:
+              data.audience === 'selected_roles' ? allowedRoles : null,
+          },
+        ])
+        if (chunkErr) {
+          await supabase
+            .from('knowledge_sources')
+            .update({
+              indexing_status: 'failed',
+              error_message: chunkErr.message ?? String(chunkErr),
+            })
+            .eq('id', sourceId)
+          setIngesting(false)
+          alert(`Indexing failed: ${chunkErr.message}`)
+          return
+        }
+
+        await supabase
+          .from('knowledge_sources')
+          .update({ indexing_status: 'indexed', error_message: null })
+          .eq('id', sourceId)
+      }
+
+      // Optional: also trigger n8n webhook for any downstream automation
       const ingestUrl = import.meta.env.VITE_N8N_KNOWLEDGE_INGEST_WEBHOOK_URL
-      if (ingestUrl && (sourceData as unknown as any[])?.[0]?.id) {
+      if (ingestUrl && sourceId) {
         try {
           await fetch(ingestUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source_id: (sourceData as unknown as any[])?.[0]?.id }),
+            body: JSON.stringify({ source_id: sourceId }),
           })
         } catch {
-          // Webhook failure should not block source creation; user can reprocess manually
+          // Webhook failure should not block source creation
         }
       }
 
@@ -162,8 +237,49 @@ export default function KnowledgeBasePage() {
   }
 
   const reprocessSource = async (id: string) => {
-    await supabase.from('knowledge_sources').update({ indexing_status: 'pending', error_message: null }).eq('id', id)
+    const src = sources.find((s) => s.id === id)
+    if (!src) return
+    await supabase
+      .from('knowledge_sources')
+      .update({ indexing_status: 'pending', error_message: null })
+      .eq('id', id)
     load()
+
+    // Re-run local ingestion for file sources
+    if (src.source_type === 'file' && src.storage_path) {
+      try {
+        const { data: fileData } = await supabase.storage
+          .from('documents')
+          .download(src.storage_path)
+        if (fileData) {
+          const blobFile = new File([fileData], src.storage_path.split('/').pop() ?? 'file', {
+            type: src.file_type || 'application/octet-stream',
+          })
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) {
+            const profile = (await supabase.from('profiles').select('organisation_id, role').eq('id', user.id).single()).data
+            if (profile) {
+              const result: IngestResult = await ingestFile(blobFile, {
+                organisation_id: profile.organisation_id,
+                uploaded_by: user.id,
+                allowed_roles: src.allowed_roles ?? [],
+              })
+              await supabase.from('knowledge_sources').update({
+                indexing_status: result.ok ? 'indexed' : 'failed',
+                error_message: result.ok ? null : result.error,
+              }).eq('id', id)
+              load()
+            }
+          }
+        }
+      } catch (err: any) {
+        await supabase.from('knowledge_sources').update({
+          indexing_status: 'failed',
+          error_message: err.message ?? String(err),
+        }).eq('id', id)
+        load()
+      }
+    }
   }
 
   const deleteSource = async (id: string) => {
@@ -368,7 +484,7 @@ export default function KnowledgeBasePage() {
                   {file && (
                     <div className="mt-2 text-[10px] text-neutral-500">{file.name} ({((file.size / 1024) as number).toFixed(1)} KB)</div>
                   )}
-                  <p className="text-[10px] text-neutral-500 mt-1">Max 10 MB. PDF, DOCX, TXT, MD, CSV. Text extraction + embedding handled by n8n ingestion pipeline.</p>
+                  <p className="text-[10px] text-neutral-500 mt-1">Max 10 MB. PDF, DOCX, TXT, MD, CSV. Text is extracted, chunked, embedded, and indexed locally via the knowledge pipeline.</p>
                 </div>
               )}
               <div>

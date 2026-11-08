@@ -6,6 +6,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-document-notifications
  *
@@ -21,7 +26,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 serve(async (req) => {
   try {
     const { job } = await req.json();
-    const now = new Date().toISOString();
+    const now = nowLagos().toISOString();
 
     // Idempotency guard
     const { data: idem } = await supabase
@@ -36,7 +41,8 @@ serve(async (req) => {
     const orgId = job.organisation_id;
 
     // Find recently created documents (last 24h)
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const yesterdayLagos = new Date(nowLagos().getTime() - 24 * 60 * 60 * 1000);
+    const yesterday = yesterdayLagos.toISOString();
 
     const { data: documents, error: docError } = await supabase
       .from("documents")
@@ -54,7 +60,7 @@ serve(async (req) => {
         .from("profiles")
         .select("id")
         .eq("organisation_id", orgId)
-        .in("role", ["super_admin", "staff_admin"]);
+        .in("role", ["admin", "director"]);
 
       const recipients = new Set<string>();
       if (admins) admins.forEach((a: any) => recipients.add(a.id));

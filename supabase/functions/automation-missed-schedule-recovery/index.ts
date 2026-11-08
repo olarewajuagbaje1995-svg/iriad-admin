@@ -6,6 +6,11 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+/** Return the current moment expressed in Africa/Lagos wall-clock time. */
+function nowLagos(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
 /**
  * automation-missed-schedule-recovery
  *
@@ -21,8 +26,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
  */
 serve(async (req) => {
   try {
-    const now = new Date().toISOString();
-    const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // 24h relevance window
+    const now = nowLagos().toISOString();
+    const windowStart = new Date(nowLagos().getTime() - 24 * 60 * 60 * 1000).toISOString(); // 24h relevance window
 
     // Find missed jobs: Pending/Failed, scheduled in the past, within relevance window
     const { data: missedJobs, error } = await supabase
@@ -84,7 +89,7 @@ serve(async (req) => {
 
       try {
         const result = await executeNativeOperation(claimed);
-        const completedAt = new Date().toISOString();
+        const completedAt = nowLagos().toISOString();
 
         await supabase.from("automation_jobs").update({
           status: "Completed",
@@ -122,7 +127,7 @@ serve(async (req) => {
 
         recovered++;
       } catch (execErr) {
-        const completedAt = new Date().toISOString();
+        const completedAt = nowLagos().toISOString();
         await supabase.from("automation_jobs").update({
           status: "Failed",
           error_details: { message: String(execErr), failed_at: completedAt },
