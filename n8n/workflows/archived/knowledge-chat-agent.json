@@ -1,0 +1,208 @@
+{
+  "name": "Knowledge Chat Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "knowledge-chat",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "id": "knowledge-chat-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "{{ $json.headers['x-webhook-secret'] }}",
+              "operation": "equals",
+              "value2": "{{ $env.N8N_WEBHOOK_SECRET }}"
+            }
+          ]
+        }
+      },
+      "name": "Validate Webhook Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "id": "knowledge-chat-validate"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "profiles",
+        "columns": "id, full_name, role, organisation_id",
+        "filter": {
+          "column": "id",
+          "operator": "equal",
+          "value": "{{ $json.body.profile_id }}"
+        },
+        "options": {}
+      },
+      "name": "Get User Profile",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "id": "knowledge-chat-profile"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "chatbot_messages",
+        "columns": "role, content, created_at",
+        "filter": {
+          "column": "conversation_id",
+          "operator": "equal",
+          "value": "{{ $json.body.conversation_id }}"
+        },
+        "options": {
+          "order": [
+            {
+              "column": "created_at",
+              "ascending": true
+            }
+          ],
+          "limit": 10
+        }
+      },
+      "name": "Get Conversation History",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 420],
+      "id": "knowledge-chat-history"
+    },
+    {
+      "parameters": {
+        "url": "{{ $env.N8N_BASE_URL }}/api/v1/embeddings/generate",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyContentJson": {
+          "texts": ["{{ $json.body.question }}"],
+          "model": "nvidia/embed-qa-4"
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "header",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer ={{ $env.NVIDIA_API_KEY }}"
+          }
+        }
+      },
+      "name": "Generate Query Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 540],
+      "id": "knowledge-chat-embedding"
+    },
+    {
+      "parameters": {
+        "operation": "rpc",
+        "rpcFunction": "match_knowledge_chunks",
+        "columns": "*",
+        "options": {}
+      },
+      "name": "Vector Search (Role-Filtered)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 420],
+      "id": "knowledge-chat-search"
+    },
+    {
+      "parameters": {
+        "url": "{{ $env.N8N_BASE_URL }}/api/v1/llm/generate",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyContentJson": {
+          "model": "nvidia/nemotron",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the IRIAD knowledge assistant. Answer using ONLY the provided knowledge base context. If you cannot answer from the context, say so clearly. Do not invent policies, staff records, attendance figures, or project information. Always cite sources by title."
+            },
+            {
+              "role": "user",
+              "content": "{{ 'Question: ' + $json.body.question + '\\n\\nContext: ' + JSON.stringify($json.chunks) + '\\n\\nConversation history: ' + JSON.stringify($json.history) }}"
+            }
+          ],
+          "temperature": 0.3
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "header",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer ={{ $env.NVIDIA_API_KEY }}"
+          }
+        }
+      },
+      "name": "Generate AI Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 420],
+      "id": "knowledge-chat-ai"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "chatbot_messages",
+        "columns": {
+          "conversation_id": "{{ $json.body.conversation_id }}",
+          "profile_id": "{{ $json.body.profile_id }}",
+          "role": "assistant",
+          "content": "{{ $json.choices[0].message.content }}",
+          "sources": "{{ $json.chunks.map(c => c.metadata.source_title) }}",
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Save Assistant Reply",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 420],
+      "id": "knowledge-chat-save"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validate Webhook Secret", "type": "main", "index": 0 }]]
+    },
+    "Validate Webhook Secret": {
+      "main": [
+        [{ "node": "Get User Profile", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get User Profile": {
+      "main": [
+        [{ "node": "Get Conversation History", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Conversation History": {
+      "main": [
+        [{ "node": "Generate Query Embedding", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate Query Embedding": {
+      "main": [
+        [{ "node": "Vector Search (Role-Filtered)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Vector Search (Role-Filtered)": {
+      "main": [
+        [{ "node": "Generate AI Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate AI Response": {
+      "main": [
+        [{ "node": "Save Assistant Reply", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "knowledge-chat-agent",
+  "meta": { "instanceId": 0, "templateCredsSetupCompleted": true }
+}

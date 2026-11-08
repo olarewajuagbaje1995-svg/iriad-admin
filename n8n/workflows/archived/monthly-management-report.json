@@ -1,0 +1,73 @@
+{
+  "name": "Monthly Management Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "intervalHour": 24
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Monthly Last Day 17:00 Lagos Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "id": "monthly-report-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "monthly_reports",
+        "columns": "*, profiles(full_name, email)",
+        "filter": {
+          "column": "created_at",
+          "operator": "gte",
+          "value": "={{ $now.subtract(1, 'month').startOf('day').toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Fetch Monthly Reports",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "id": "monthly-report-fetch"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "notifications",
+        "columns": {
+          "title": "Monthly management report ready",
+          "body": "Monthly attendance and report summary compiled for management review.",
+          "type": "report",
+          "link": "/app/reports",
+          "is_read": false,
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Notify Management",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "id": "monthly-report-notify"
+    }
+  ],
+  "connections": {
+    "Monthly Last Day 17:00 Lagos Trigger": {
+      "main": [[{ "node": "Fetch Monthly Reports", "type": "main", "index": 0 }]]
+    },
+    "Fetch Monthly Reports": {
+      "main": [[{ "node": "Notify Management", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "monthly-management-report",
+  "meta": { "instanceId": 0, "templateCredsSetupCompleted": true }
+}

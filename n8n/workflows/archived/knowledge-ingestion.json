@@ -1,0 +1,74 @@
+{
+  "name": "Knowledge Ingestion",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "knowledge_sources",
+        "columns": {
+          "title": "={{ $json.title }}",
+          "url": "={{ $json.url }}",
+          "organisation_id": "{{ $env.IRIAD_ORGANISATION_ID }}",
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Register Knowledge Source",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "id": "knowledge-register-source"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "knowledge_chunks",
+        "columns": {
+          "source_id": "={{ $json.id }}",
+          "content": "={{ $json.content }}",
+          "embedding": "={{ $json.embedding }}",
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Store Chunks with Embeddings",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "id": "knowledge-store-chunks"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "knowledge_sources",
+        "columns": {
+          "indexing_status": "indexed",
+          "last_indexed_at": "={{ $now.toISOString() }}"
+        },
+        "filter": {
+          "column": "id",
+          "operator": "equal",
+          "value": "={{ $json.id }}"
+        },
+        "options": {}
+      },
+      "name": "Mark Source Indexed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "id": "knowledge-mark-indexed"
+    }
+  ],
+  "connections": {
+    "Register Knowledge Source": {
+      "main": [[{ "node": "Store Chunks with Embeddings", "type": "main", "index": 0 }]]
+    },
+    "Store Chunks with Embeddings": {
+      "main": [[{ "node": "Mark Source Indexed", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "knowledge-ingestion",
+  "meta": { "instanceId": 0, "templateCredsSetupCompleted": true }
+}

@@ -1,0 +1,73 @@
+{
+  "name": "Task Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "intervalHour": 24
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Daily 09:00 Lagos Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "id": "task-reminder-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "tasks",
+        "columns": "id, title, due_date, status, profiles(full_name, email)",
+        "filter": {
+          "column": "status",
+          "operator": "neq",
+          "value": "completed"
+        },
+        "options": {}
+      },
+      "name": "Fetch Open Tasks",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "id": "task-reminder-tasks"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "notifications",
+        "columns": {
+          "title": "Task due soon",
+          "body": "={{ 'Task ' + $json.title + ' is due on ' + $json.due_date }}",
+          "type": "task_reminder",
+          "link": "/app/tasks",
+          "is_read": false,
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Send Task Reminder",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "id": "task-reminder-send"
+    }
+  ],
+  "connections": {
+    "Daily 09:00 Lagos Trigger": {
+      "main": [[{ "node": "Fetch Open Tasks", "type": "main", "index": 0 }]]
+    },
+    "Fetch Open Tasks": {
+      "main": [[{ "node": "Send Task Reminder", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "task-reminders",
+  "meta": { "instanceId": 0, "templateCredsSetupCompleted": true }
+}

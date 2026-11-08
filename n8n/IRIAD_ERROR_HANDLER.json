@@ -1,0 +1,251 @@
+{
+  "name": "IRIAD Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "error-trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract error data from n8n Error Trigger\nconst input = $input.first().json || {};\nconst workflowName = input.workflowName || input.workflow_name || \"unknown\";\nconst nodeName = input.nodeName || input.node_name || \"unknown\";\nconst executionId = input.executionId || input.execution_id || \"unknown\";\nconst executionUrl = input.executionUrl || input.execution_url || \"unknown\";\nconst errorMessage = (input.error && input.error.message) || input.error || input.message || \"Unknown error\";\nconst errorStack = (input.error && input.error.stack) || input.stack || \"\";\n\n// Identify business section from workflow name\nlet businessSection = \"general\";\nconst wl = String(workflowName).toLowerCase();\nif (wl.includes(\"attendance\")) businessSection = \"attendance\";\nelse if (wl.includes(\"report\")) businessSection = \"reporting\";\nelse if (wl.includes(\"announcement\") || wl.includes(\"communicat\")) businessSection = \"announcements\";\nelse if (wl.includes(\"knowledge\") || wl.includes(\"ingest\") || wl.includes(\"chat\")) businessSection = \"knowledge\";\nelse if (wl.includes(\"task\")) businessSection = \"tasks\";\nelse if (wl.includes(\"leave\") || wl.includes(\"correction\")) businessSection = \"leave_corrections\";\n\n// Africa/Lagos timestamp (UTC+1, no DST)\nconst lagosTime = new Date().toLocaleString(\"en-US\", { timeZone: \"Africa/Lagos\" });\n\nreturn [{\n  json: {\n    workflow_name: workflowName,\n    node_name: nodeName,\n    execution_id: executionId,\n    execution_url: executionUrl,\n    error_message: errorMessage,\n    error_stack: errorStack,\n    business_section: businessSection,\n    timestamp_lagos: lagosTime,\n    timestamp_iso: new Date().toISOString(),\n    organisation_id: process.env.IRIAD_ORGANISATION_ID || \"\"\n  }\n}]",
+        "options": {}
+      },
+      "name": "Extract Error Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "id": "extract-error-data"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "table": "automation_runs",
+        "columns": {},
+        "filterOptions": {
+          "filters": [
+            {
+              "condition": {
+                "operation": "equals",
+                "value1": "={{ $json.execution_id }}",
+                "value2": ""
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Check Duplicate Execution",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        720,
+        300
+      ],
+      "id": "check-duplicate"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dedup-check",
+              "leftValue": "={{ $json.length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        300
+      ],
+      "id": "is-duplicate"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "automation_runs",
+        "columns": {
+          "workflow_name": "={{ $json.workflow_name }}",
+          "trigger": "={{ $json.business_section }}",
+          "status": "failed",
+          "started_at": "={{ $json.timestamp_iso }}",
+          "completed_at": "={{ $json.timestamp_iso }}",
+          "input": "={{ { execution_id: $json.execution_id, node: $json.node_name, section: $json.business_section } }}",
+          "output": "={{ {} }}",
+          "error": "={{ $json.error_message }}",
+          "organisation_id": "={{ $json.organisation_id }}"
+        },
+        "options": {}
+      },
+      "name": "Log Error to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        200
+      ],
+      "id": "log-error-supabase"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "notifications",
+        "columns": {
+          "organisation_id": "={{ $json.organisation_id }}",
+          "recipient_id": "={{ $env.ADMIN_EMAIL }}",
+          "title": "Platform error: {{ $json.workflow_name }}",
+          "body": "{{ $json.error_message }}",
+          "type": "system_error",
+          "link": "/app/attendance-control",
+          "is_read": false,
+          "created_at": "={{ $json.timestamp_iso }}"
+        },
+        "options": {}
+      },
+      "name": "Notify Admin In-App",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        400
+      ],
+      "id": "notify-admin"
+    },
+    {
+      "parameters": {
+        "to": "olarewajuagbaje@gmail.com",
+        "subject": "IRIAD Platform Error — {{ $json.workflow_name }}",
+        "html": "<h2>IRIAD Platform Error</h2><p><strong>Workflow:</strong> {{ $json.workflow_name }}</p><p><strong>Node:</strong> {{ $json.node_name }}</p><p><strong>Section:</strong> {{ $json.business_section }}</p><p><strong>Execution ID:</strong> {{ $json.execution_id }}</p><p><strong>Error:</strong> {{ $json.error_message }}</p><p><strong>Time (Lagos):</strong> {{ $json.timestamp_lagos }}</p><p><strong>Execution URL:</strong> <a href=\"{{ $json.execution_url }}\">{{ $json.execution_url }}</a></p>{{ $json.error_stack ? '<pre>' + $json.error_stack + '</pre>' : '' }}",
+        "options": {}
+      },
+      "name": "Gmail — Error Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        300
+      ],
+      "id": "gmail-error-alert"
+    },
+    {
+      "parameters": {},
+      "name": "No-Op (Duplicate)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        500
+      ],
+      "id": "noop-duplicate"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Error Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Error Data": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate Execution": {
+      "main": [
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "No-Op (Duplicate)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Error to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Notify Admin In-App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Admin In-App": {
+      "main": [
+        [
+          {
+            "node": "Gmail — Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "iriad-error-handler",
+  "meta": {
+    "instanceId": 0,
+    "templateCredsSetupCompleted": true
+  }
+}

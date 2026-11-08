@@ -1,0 +1,74 @@
+{
+  "name": "Announcement Email Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "announcements",
+        "columns": {
+          "title": "={{ $json.title }}",
+          "body": "={{ $json.body }}",
+          "organisation_id": "00000000-0000-0000-0000-000000000001",
+          "created_by": "={{ $json.created_by }}",
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Create Announcement",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "id": "announcement-create"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "email_report_recipients",
+        "columns": "email, name",
+        "filter": {
+          "column": "is_active",
+          "operator": "equal",
+          "value": true
+        },
+        "options": {}
+      },
+      "name": "Fetch Recipients",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "id": "announcement-recipients"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "notifications",
+        "columns": {
+          "title": "={{ $json.title }}",
+          "body": "={{ $json.body }}",
+          "type": "announcement",
+          "link": "/app/announcements",
+          "is_read": false,
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Notify Recipients",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "id": "announcement-notify"
+    }
+  ],
+  "connections": {
+    "Create Announcement": {
+      "main": [[{ "node": "Fetch Recipients", "type": "main", "index": 0 }]]
+    },
+    "Fetch Recipients": {
+      "main": [[{ "node": "Notify Recipients", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "announcement-email-notification",
+  "meta": { "instanceId": 0, "templateCredsSetupCompleted": true }
+}

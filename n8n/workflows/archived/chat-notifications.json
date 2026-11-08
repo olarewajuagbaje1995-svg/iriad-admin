@@ -1,0 +1,73 @@
+{
+  "name": "Chat Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "chat_messages",
+        "columns": {
+          "room_id": "={{ $json.room_id }}",
+          "profile_id": "={{ $json.profile_id }}",
+          "content": "={{ $json.content }}",
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Create Chat Message",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "id": "chat-create-message"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "chat_room_members",
+        "columns": "profile_id",
+        "filter": {
+          "column": "room_id",
+          "operator": "equal",
+          "value": "={{ $json.room_id }}"
+        },
+        "options": {}
+      },
+      "name": "Fetch Room Members",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "id": "chat-members"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "notifications",
+        "columns": {
+          "title": "New message in room",
+          "body": "={{ $json.content }}",
+          "type": "chat",
+          "link": "/app/chat",
+          "is_read": false,
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Notify Members",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "id": "chat-notify"
+    }
+  ],
+  "connections": {
+    "Create Chat Message": {
+      "main": [[{ "node": "Fetch Room Members", "type": "main", "index": 0 }]]
+    },
+    "Fetch Room Members": {
+      "main": [[{ "node": "Notify Members", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "chat-notifications",
+  "meta": { "instanceId": 0, "templateCredsSetupCompleted": true }
+}

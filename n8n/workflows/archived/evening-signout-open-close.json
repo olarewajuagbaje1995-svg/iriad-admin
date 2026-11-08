@@ -1,0 +1,95 @@
+{
+  "name": "Evening Sign-out Open/Close",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "intervalHour": 24
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Daily 17:00 Lagos Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "id": "signout-open-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "table": "attendance_windows",
+        "columns": {
+          "date": "={{ $now.toISOString().split('T')[0] }}",
+          "organisation_id": "00000000-0000-0000-000000000001",
+          "window_type": "sign_out",
+          "opens_at": "={{ $now.startOfDay().set({ hour: 17, minute: 0 }).toISOString() }}",
+          "closes_at": "={{ $now.startOfDay().set({ hour: 18, minute: 0 }).toISOString() }}",
+          "is_active": true,
+          "updated_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Open Sign-out Window",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "id": "signout-open-window"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "intervalHour": 24
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Daily 18:05 Lagos Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600],
+      "id": "signout-close-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "attendance_windows",
+        "columns": {
+          "is_active": false,
+          "updated_at": "={{ $now.toISOString() }}"
+        },
+        "filter": {
+          "column": "date",
+          "value": "={{ $now.startOfDay().toISOString().split('T')[0] }}",
+          "operator": "equal"
+        },
+        "options": {}
+      },
+      "name": "Close Sign-out Window",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 600],
+      "id": "signout-close-window"
+    }
+  ],
+  "connections": {
+    "Daily 17:00 Lagos Trigger": {
+      "main": [[{ "node": "Open Sign-out Window", "type": "main", "index": 0 }]]
+    },
+    "Daily 18:05 Lagos Trigger": {
+      "main": [[{ "node": "Close Sign-out Window", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "evening-signout-open-close",
+  "meta": { "instanceId": 0, "templateCredsSetupCompleted": true }
+}

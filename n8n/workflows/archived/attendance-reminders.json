@@ -1,0 +1,94 @@
+{
+  "name": "Attendance Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "intervalHour": 24
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Daily 09:10 Lagos Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "id": "attendance-reminder-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "profiles",
+        "columns": "id, email, full_name",
+        "filter": {
+          "column": "is_active",
+          "operator": "equal",
+          "value": true
+        },
+        "options": {}
+      },
+      "name": "Fetch Active Staff",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "id": "attendance-reminder-staff"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "attendance",
+        "columns": "profile_id, created_at",
+        "filter": {
+          "column": "created_at",
+          "operator": "gte",
+          "value": "={{ $now.startOfDay().toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Fetch Today Check-ins",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 500],
+      "id": "attendance-reminder-checkins"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "notifications",
+        "columns": {
+          "title": "Reminder: you have not checked in yet",
+          "body": "Please complete your attendance check-in for today.",
+          "type": "attendance_reminder",
+          "link": "/app/attendance",
+          "is_read": false,
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Send Check-in Reminder",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 400],
+      "id": "attendance-reminder-send"
+    }
+  ],
+  "connections": {
+    "Daily 09:10 Lagos Trigger": {
+      "main": [[{ "node": "Fetch Active Staff", "type": "main", "index": 0 }]]
+    },
+    "Fetch Active Staff": {
+      "main": [[{ "node": "Fetch Today Check-ins", "type": "main", "index": 0 }]]
+    },
+    "Fetch Today Check-ins": {
+      "main": [[{ "node": "Send Check-in Reminder", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "attendance-reminders",
+  "meta": { "instanceId": 0, "templateCredsSetupCompleted": true }
+}

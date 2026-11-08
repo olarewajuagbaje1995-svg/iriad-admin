@@ -1,0 +1,77 @@
+{
+  "name": "Attendance Open",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "intervalHour": 24
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Daily 08:00 Lagos Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "id": "attendance-open-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "table": "attendance_windows",
+        "columns": {
+          "date": "={{ $now.toISOString().split('T')[0] }}",
+          "organisation_id": "00000000-0000-0000-0000-000000000001",
+          "window_type": "check_in",
+          "opens_at": "={{ $now.startOfDay().set({ hour: 8, minute: 0 }).toISOString() }}",
+          "closes_at": "={{ $now.startOfDay().set({ hour: 9, minute: 0 }).toISOString() }}",
+          "is_active": true,
+          "updated_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Open Check-in Window",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "id": "attendance-open-window"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "notifications",
+        "columns": {
+          "organisation_id": "00000000-0000-0000-0000-000000000001",
+          "title": "Attendance check-in is now open",
+          "body": "Check in between 08:00 and 09:00 WAT today.",
+          "type": "attendance",
+          "link": "/app/attendance",
+          "is_read": false,
+          "created_at": "={{ $now.toISOString() }}"
+        },
+        "options": {}
+      },
+      "name": "Notify Staff Check-in Open",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "id": "attendance-open-notify"
+    }
+  ],
+  "connections": {
+    "Daily 08:00 Lagos Trigger": {
+      "main": [[{ "node": "Open Check-in Window", "type": "main", "index": 0 }]]
+    },
+    "Open Check-in Window": {
+      "main": [[{ "node": "Notify Staff Check-in Open", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "attendance-open",
+  "meta": { "instanceId": 0, "templateCredsSetupCompleted": true }
+}
