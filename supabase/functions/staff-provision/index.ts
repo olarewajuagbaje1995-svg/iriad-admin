@@ -2,10 +2,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const supabaseAdmin = createClient(SUPABASE_URL, serviceRoleKey);
 
 const VALID_ROLES = ["admin", "director", "staff"] as const;
 type Role = (typeof VALID_ROLES)[number];
@@ -35,7 +35,9 @@ function json(body: unknown, status = 200) {
  */
 async function authenticateCaller(req: Request) {
   const authHeader = req.headers.get("Authorization");
+  console.log("[staff-provision] Authorization header present:", !!authHeader);
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.log("[staff-provision] Missing or malformed Authorization header");
     throw new Error("Missing or invalid authorization header");
   }
 
@@ -45,7 +47,9 @@ async function authenticateCaller(req: Request) {
   });
 
   const { data: { user }, error: userError } = await userClient.auth.getUser();
+  console.log("[staff-provision] JWT verification result:", { userId: user?.id, error: userError?.message });
   if (userError || !user) {
+    console.log("[staff-provision] JWT verification failed:", userError?.message);
     throw new Error("Unauthorized: invalid session");
   }
 
@@ -56,6 +60,7 @@ async function authenticateCaller(req: Request) {
     .single();
 
   if (profileError || !profile) {
+    console.log("[staff-provision] Profile lookup failed:", profileError?.message);
     throw new Error("Forbidden: caller profile not found");
   }
 
@@ -210,6 +215,7 @@ serve(async (req) => {
     });
 
     if (createError || !createData.user) {
+      console.log("[staff-provision] createUser failed:", createError?.message ?? createError);
       return json(
         { ok: false, error: createError?.message ?? "Failed to create user" },
         400,
