@@ -8,9 +8,10 @@ type Task = Database['public']['Tables']['tasks']['Row']
 interface UseTasksOptions {
   userId?: string
   role?: Role
+  organisationId?: string
 }
 
-export function useTasks({ userId, role }: UseTasksOptions = {}) {
+export function useTasks({ userId, role, organisationId }: UseTasksOptions = {}) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +40,11 @@ export function useTasks({ userId, role }: UseTasksOptions = {}) {
   const createTask = async (task: Partial<Task> & { assigneeId?: string }) => {
     // assigneeId is not a column on the tasks table — assign via the task_assignees join table.
     const { assigneeId, ...taskData } = task
-    const { data, error: err } = await supabase.from('tasks').insert([taskData]).select().single()
+    const { data, error: err } = await supabase.from('tasks').insert([{
+      ...taskData,
+      created_by: userId,
+      organisation_id: organisationId,
+    }]).select().single()
     if (err) { setError(err.message); return null }
     if (assigneeId) {
       const { error: assigneeErr } = await supabase.from('task_assignees').insert([{

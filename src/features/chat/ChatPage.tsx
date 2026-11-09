@@ -1,6 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Send, MessageCircle, Users, Plus, Paperclip, Eye, Search, Trash2, Pencil, Save } from 'lucide-react'
+import {
+  Send,
+  MessageCircle,
+  Users,
+  Plus,
+  Image,
+  Eye,
+  Search,
+  Trash2,
+  Pencil,
+  Save,
+  X,
+  MessageSquare,
+} from 'lucide-react'
 import { formatLagos } from '@/lib/dates'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -13,12 +26,14 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [attachments, setAttachments] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' && window.innerWidth > 768)
 
   const [userId, setUserId] = useState<string | null>(null)
   const channelRef = useRef<any>(null)
 
-  // Create room
   const { profile } = useAuth()
   const role: 'admin' | 'director' | 'staff' = (profile?.role as 'admin' | 'director' | 'staff') ?? 'staff'
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -27,14 +42,21 @@ export default function ChatPage() {
   const [newRoomPrivate, setNewRoomPrivate] = useState(false)
   const [creatingRoom, setCreatingRoom] = useState(false)
 
-  // Edit room state.
-  const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
-  const [editRoomName, setEditRoomName] = useState('')
-  const [editRoomDescription, setEditRoomDescription] = useState('')
-  const [editRoomPrivate, setEditRoomPrivate] = useState(false)
-
   const canManageRoom = () => role === 'admin' || role === 'director'
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768
+
+  // Scroll to bottom of messages
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages, currentRoom])
+
+  // Create room
   const startEditRoom = (room: any) => {
     if (!canManageRoom()) return
     setEditingRoomId(room.id)
@@ -77,7 +99,7 @@ export default function ChatPage() {
     try {
       const { error: err } = await supabase.from('chat_rooms').delete().eq('id', id)
       if (err) throw err
-      await loadRooms()
+      loadRooms()
       if (currentRoom?.id === id) setCurrentRoom(null)
     } catch (err: any) {
       alert(err.message || 'Failed to delete room.')
@@ -108,7 +130,6 @@ export default function ChatPage() {
         .single()
       if (err) throw err
 
-      // Add the creator as a room admin.
       await supabase.from('chat_room_members').insert([{
         room_id: room.id,
         profile_id: user.id,
@@ -126,6 +147,12 @@ export default function ChatPage() {
       setCreatingRoom(false)
     }
   }
+
+  // Edit room state.
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
+  const [editRoomName, setEditRoomName] = useState('')
+  const [editRoomDescription, setEditRoomDescription] = useState('')
+  const [editRoomPrivate, setEditRoomPrivate] = useState(false)
 
   useEffect(() => {
     loadRooms()
@@ -154,6 +181,9 @@ export default function ChatPage() {
     setCurrentRoom(room)
     setMessages([])
     setAttachments([])
+    setImagePreviews([])
+    if (isMobile) setSidebarOpen(false)
+
     try {
       const { data } = await supabase
         .from('chat_messages')
@@ -163,14 +193,12 @@ export default function ChatPage() {
         .limit(100)
       setMessages(data ?? [])
 
-      // Mark as read
       if (userId) {
         await supabase.from('chat_message_reads').upsert([
           { room_id: room.id, profile_id: userId, read_at: new Date().toISOString() },
         ])
       }
 
-      // Clean up previous channel
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current)
       }
@@ -179,7 +207,12 @@ export default function ChatPage() {
       channelRef.current = channel
       channel
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${room.id}` }, (payload: any) => {
-          setMessages((prev) => [...prev, payload.new])
+          setMessages((prev) => {
+            const exists = prev.some((m) => m.id === payload.new.id)
+            if (exists) return prev
+            return [...prev, payload.new]
+          })
+          setTimeout(scrollToBottom, 100)
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_message_reactions', filter: `room_id=eq.${room.id}` }, (payload: any) => {
           setMessages((prev) => prev.map((m) => m.id === payload.new.message_id
@@ -192,59 +225,104 @@ export default function ChatPage() {
     }
   }
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) return
+
+    const previews = imageFiles.map((f) => URL.createObjectURL(f))
+    setImagePreviews((prev) => [...prev, ...previews])
+    setAttachments((prev) => [...prev, ...imageFiles])
+    e.target.value = ''
+  }
+
+  const removeImagePreview = (index: number) => {
+    setAttachments((prev) => {
+      const file = prev[index]
+      if (file) URL.revokeObjectURL(imagePreviews[index])
+      return prev.filter((_, i) => i !== index)
+    })
+    setImagePreviews((prev) => {
+      URL.revokeObjectURL(prev[index])
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  const uploadImage = async (file: File, messageId: string) => {
+    const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '_')}`
+    const orgId = (await supabase.from('profiles').select('organisation_id').eq('id', userId).single()).data?.organisation_id
+    const storagePath = `chat_images/${orgId}/${currentRoom!.id}/${fileName}`
+
+    const { error: upErr } = await supabase.storage.from('chat_images').upload(storagePath, file)
+    if (upErr) {
+      console.error('Image upload failed:', upErr)
+      return null
+    }
+
+    const { data: urlData } = supabase.storage.from('chat_images').getPublicUrl(storagePath)
+    const imageUrl = urlData.publicUrl
+
+    await supabase.from('chat_message_attachments').insert([{
+      message_id: messageId,
+      file_name: file.name,
+      file_type: file.type,
+      file_size: file.size,
+      storage_path: storagePath,
+    }])
+
+    return imageUrl
+  }
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim() && attachments.length === 0 || !currentRoom) return
+    if ((!newMessage.trim() && attachments.length === 0 && imagePreviews.length === 0) || !currentRoom) return
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
     setUploading(true)
 
-    // Insert message first to get a real message_id
-    const { data } = await supabase
-      .from('chat_messages')
-      .insert([{ room_id: currentRoom.id, profile_id: user.id, body: newMessage }])
-      .select('*, profiles(full_name), chat_message_attachments(*), chat_message_reactions(*), chat_message_reads(profile_id)').single()
+    try {
+      const { data } = await supabase
+        .from('chat_messages')
+        .insert([{
+          room_id: currentRoom.id,
+          profile_id: user.id,
+          body: newMessage.trim(),
+          message_type: attachments.length > 0 || imagePreviews.length > 0 ? 'image' : 'text',
+        }])
+        .select('*, profiles(full_name, avatar_url), chat_message_attachments(*), chat_message_reactions(*), chat_message_reads(profile_id)').single()
 
-    if (!data) {
-      setUploading(false)
-      return
-    }
+      if (!data) {
+        setUploading(false)
+        return
+      }
 
-    // Upload attachments and link to the real message_id
-    if (attachments.length > 0) {
-      const orgId = (await supabase.from('profiles').select('organisation_id').eq('id', user.id).single()).data?.organisation_id
-      for (const file of attachments) {
-        const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '_')}`
-        const storagePath = `chat/${orgId}/${currentRoom!.id}/${fileName}`
-        const { error: upErr } = await supabase.storage.from('documents').upload(storagePath, file)
-        if (!upErr) {
-          await supabase.from('chat_message_attachments').insert([{
-            message_id: data.id,
-            file_name: file.name,
-            file_type: file.type,
-            file_size: file.size,
-            storage_path: storagePath,
-            uploaded_by: user.id,
-          }])
+      // Upload images
+      const imageFiles = attachments.filter((f) => f.type.startsWith('image/'))
+      for (const file of imageFiles) {
+        const imageUrl = await uploadImage(file, data.id)
+        if (imageUrl) {
+          await supabase.from('chat_messages').update({
+            body: imageUrl,
+          }).eq('id', data.id)
         }
       }
+
+      setMessages((prev) => [...prev, data])
+      setNewMessage('')
+      setAttachments([])
+      setImagePreviews([])
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message || 'Failed to send message.')
+    } finally {
+      setUploading(false)
     }
-
-    setMessages((prev) => [...prev, data])
-    setNewMessage('')
-    setAttachments([])
-    setUploading(false)
-  }
-
-  const removeAttachment = (file: File) => {
-    setAttachments(attachments.filter((f) => f !== file))
   }
 
   const addReaction = async (messageId: string, emoji: string) => {
     if (!userId || !currentRoom) return
     try {
-      // Check if user already reacted with this emoji
       const msg = messages.find((m) => m.id === messageId)
       const existing = msg?.chat_message_reactions?.find((r: any) => r.profile_id === userId && r.emoji === emoji)
       if (existing) {
@@ -267,34 +345,54 @@ export default function ChatPage() {
     return message.chat_message_reads?.map((r: any) => r.profile_id).filter(Boolean) ?? []
   }
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  const isOwnMessage = (message: any) => message.profile_id === userId
+
+  const senderName = (message: any) => {
+    return (message.profiles as any)?.full_name ?? 'User'
   }
 
-  if (loading) return <div className="p-6">Loading rooms…</div>
+  if (loading) return (
+    <div className="flex h-screen items-center justify-center">
+      <div className="flex flex-col items-center gap-2">
+        <MessageCircle className="w-8 h-8 text-brand-600 animate-pulse" />
+        <p className="text-neutral-500">Loading chat…</p>
+      </div>
+    </div>
+  )
 
   return (
-    <div className="flex h-[600px]">
-      {/* Rooms list */}
-      <div className="w-80 border-r border-neutral-200 bg-white flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200">
+    <div className="flex h-screen bg-neutral-50 overflow-hidden">
+      {/* Mobile sidebar overlay */}
+      {isMobile && sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Rooms sidebar */}
+      <aside className="hidden md:flex flex-col w-80 border-r border-neutral-200 bg-white">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-neutral-200 bg-white">
           <div className="flex items-center gap-2">
             <MessageCircle className="w-5 h-5 text-brand-600" />
-            <h2 className="text-sm font-semibold text-neutral-900">Chat Rooms</h2>
+            <h2 className="text-sm font-semibold text-neutral-900">Chats</h2>
           </div>
-          {role === 'admin' || role === 'director' ? (
-            <button className="p-1.5 text-neutral-500 hover:text-brand-600" title="New room" onClick={() => setShowCreateForm((s) => !s)}>
+          {canManageRoom() && (
+            <button
+              className="p-1.5 text-neutral-500 hover:text-brand-600 hover:bg-neutral-100 rounded-md transition-colors"
+              title="New room"
+              onClick={() => setShowCreateForm((s) => !s)}
+            >
               <Plus className="w-4 h-4" />
             </button>
-          ) : null}
+          )}
         </div>
-        <div className="relative px-2 pb-1">
+
+        <div className="relative px-2 pb-2">
           <Search className="absolute left-2 top-2 h-4 w-4 text-neutral-400" />
           <input
             type="text"
-            className="pl-7 pr-2 input text-sm"
+            className="pl-7 pr-2 input text-sm w-full"
             placeholder="Search rooms…"
             value={roomSearch}
             onChange={(e) => setRoomSearch(e.target.value)}
@@ -302,7 +400,7 @@ export default function ChatPage() {
         </div>
 
         {showCreateForm && (
-          <div className="p-2 space-y-2">
+          <div className="p-3 space-y-2 border-b border-neutral-100 bg-white/80 backdrop-blur">
             <form onSubmit={(e) => void createRoom(e)} className="space-y-2">
               <label className="text-[10px] font-medium text-neutral-600 uppercase">New room</label>
               <input
@@ -340,7 +438,7 @@ export default function ChatPage() {
         )}
 
         {editingRoomId && canManageRoom() && (
-          <div className="p-2 space-y-2">
+          <div className="p-3 space-y-2 border-b border-neutral-100 bg-white/80 backdrop-blur">
             <h3 className="text-[10px] font-medium text-neutral-600 uppercase mb-1">Edit room</h3>
             <form onSubmit={handleEditRoomSave} className="space-y-2">
               <input
@@ -376,6 +474,7 @@ export default function ChatPage() {
             </form>
           </div>
         )}
+
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {(() => {
             const filtered = rooms.filter((r) => r.name.toLowerCase().includes(roomSearch.toLowerCase()))
@@ -383,27 +482,32 @@ export default function ChatPage() {
               return <div className="text-center py-10 text-neutral-500 text-sm">No chat rooms available.</div>
             }
             return filtered.map((room) => (
-              <div key={room.id} className="flex items-center justify-between px-3 py-2">
-                <button
-                  type="button"
-                  onClick={() => openRoom(room)}
-                  className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm transition-colors ${
-                    currentRoom?.id === room.id ? 'bg-brand-50 text-brand-700' : 'text-neutral-600 hover:bg-neutral-100'
-                  }`}
-                >
-                  <div className="flex-1">{room.name}</div>
-                  <span className="text-xs text-neutral-400">{room.who_can_send}</span>
-                </button>
+              <div
+                key={room.id}
+                className={`flex items-center justify-between px-3 py-2.5 rounded-md cursor-pointer transition-colors ${
+                  currentRoom?.id === room.id ? 'bg-brand-50 text-brand-700 border border-brand-200' : 'text-neutral-600 hover:bg-neutral-100'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openRoom(room)
+                }}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-shrink-0">{room.name.charAt(0).toUpperCase()}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-neutral-900 truncate">{room.name}</div>
+                      <div className="text-xs text-neutral-400 truncate">{room.who_can_send}</div>
+                    </div>
+                  </div>
+                </div>
                 {canManageRoom() && (
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       type="button"
                       className="btn-ghost text-xs p-1.5 text-neutral-500 hover:text-brand-600"
                       title="Edit room"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        startEditRoom(room)
-                      }}
+                      onClick={(e) => { e.stopPropagation(); startEditRoom(room) }}
                     >
                       <Pencil className="w-3 h-3" />
                     </button>
@@ -411,10 +515,7 @@ export default function ChatPage() {
                       type="button"
                       className="btn-ghost text-xs p-1.5 text-neutral-500 hover:text-red-600"
                       title="Delete room"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDeleteRoom(room.id)
-                      }}
+                      onClick={(e) => { e.stopPropagation(); handleDeleteRoom(room.id) }}
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -424,107 +525,183 @@ export default function ChatPage() {
             ))
           })()}
         </div>
-      </div>
+      </aside>
 
-      {/* Messages */}
+      {/* Mobile toggle sidebar */}
+      {isMobile && (
+        <button
+          className="md:hidden p-3 text-neutral-600 hover:bg-neutral-200"
+          onClick={() => setSidebarOpen((s) => !s)}
+        >
+          {sidebarOpen ? <X className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
+        </button>
+      )}
+
+      {/* Chat window */}
       <div className="flex-1 flex flex-col min-w-0 bg-white">
         {!currentRoom ? (
           <div className="flex-1 flex flex-col items-center justify-center text-neutral-500">
-            <p>Select a room to start messaging.</p>
+            <div className="w-16 h-16 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-400 mb-4">
+              <Users className="w-8 h-8" />
+            </div>
+            <p className="text-sm font-medium text-neutral-900">Select a room to start messaging.</p>
+            <p className="text-xs text-neutral-500 mt-1">Pick a conversation from the sidebar.</p>
           </div>
         ) : (
-          <div className="flex flex-col h-full">
-            <header className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 bg-white">
+          <div className="flex flex-col h-full min-w-0">
+            <header className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-200 bg-white shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-medium text-sm">
+                <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-medium text-sm">
                   {currentRoom.name.charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <div className="text-sm font-medium text-neutral-900">{currentRoom.name}</div>
-                  <div className="text-xs text-neutral-500">{currentRoom.description ?? 'Group chat'}</div>
+                  <div className="text-xs text-neutral-500">
+                    {currentRoom.description ?? 'Group chat'} • {(currentRoom as any)?.organisation_id ? 'Organisation channel' : ''}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-neutral-500" />
+                <Eye className="w-4 h-4 text-neutral-500 hover:text-brand-600 cursor-pointer" />
               </div>
             </header>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth" ref={scrollRef}>
               {messages.length === 0 && (
-                <div className="text-center text-neutral-400 text-sm py-4">No messages yet.</div>
-              )}
-              {messages.map((m) => (
-                <div key={m.id} className="flex gap-3">
-                  <div className="w-6 h-6 rounded-full bg-neutral-200 flex-shrink-0 flex items-center justify-center text-xs text-neutral-600">
-                    {(m.profiles as any)?.full_name?.charAt(0) ?? '?'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs font-medium text-neutral-700">{ (m.profiles as any)?.full_name ?? 'User' }</span>
-                      <span className="text-[10px] text-neutral-400">{formatLagos(m.created_at, { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div className={`rounded-lg px-3 py-2 max-w-[80%] ${
-                      m.profile_id === userId ? 'bg-brand-600 text-white ml-auto' : 'bg-neutral-100 text-neutral-900'
-                    }`}>
-                      {m.body}
-                      {m.chat_message_attachments?.length > 0 && (
-                        <div className="mt-2">
-                          {m.chat_message_attachments.map((a: any) => (
-                            <div key={a.id} className="flex items-center gap-2 mt-1 p-2 rounded bg-brand-50 text-[10px] text-brand-700 border border-brand-100">
-                              <Paperclip className="w-3 h-3 mr-1" />
-                              <span>{a.file_name}</span> ({formatFileSize(a.file_size)})
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 mt-1">
-                      {[['👍', '❤️', '😂', '🎉']].flat().map((emoji) => (
-                        <button
-                          key={emoji}
-                          onClick={() => addReaction(m.id, emoji)}
-                          className="p-0.5 text-[10px] hover:bg-neutral-100 rounded"
-                          title={`React ${emoji}`}
-                        >
-                          {emoji} {getReactionCount(m, emoji)}
-                        </button>
-                      ))}
-                      {m.chat_message_reads?.some((r: any) => r.profile_id === userId) && (
-                        <Eye className="w-3 h-3 text-green-600" />
-                      )}
-                      <span className="text-[10px] text-neutral-400">{getReaders(m).length} read</span>
-                    </div>
-                  </div>
+                <div className="flex flex-col items-center justify-center py-20 text-neutral-400">
+                  <MessageCircle className="w-10 h-10 mb-2" />
+                  <p className="text-sm">No messages yet.</p>
                 </div>
-              ))}
+              )}
+              {messages.map((m) => {
+                const own = isOwnMessage(m)
+                const isImage = m.message_type === 'image' || (m.body && (m.body.match(/\.(jpeg|jpg|png|gif|webp)$/i) || m.body.startsWith('http')))
+                return (
+                  <div
+                    key={m.id}
+                    className={`flex w-full max-w-[85%] ${own ? 'justify-end' : 'justify-start'} animate-fade-in`}
+                  >
+                    {!own && (
+                      <div className="flex items-end gap-2 mb-1">
+                        <div className="w-5 h-5 rounded-full bg-neutral-200 flex items-center justify-center text-[10px] font-medium text-neutral-700">
+                          {senderName(m).charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-[10px] font-medium text-neutral-500">{senderName(m)}</span>
+                      </div>
+                    )}
+                    <div className={`rounded-2xl px-4 py-2.5 max-w-xs sm:max-w-md text-sm ${
+                      own
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-neutral-200 text-neutral-900'
+                    } ${isImage ? 'p-1' : ''}`}>
+                      {isImage && m.body && (m.body.startsWith('http') || m.body.match(/\.(jpeg|jpg|png|gif|webp)$/i)) ? (
+                        <img
+                          src={m.body}
+                          alt="Message image"
+                          className="max-w-[200px] max-h-[200px] rounded-lg object-cover cursor-pointer"
+                          onClick={() => window.open(m.body, '_blank')}
+                        />
+                      ) : (
+                        m.body
+                      )}
+                    </div>
+                    <div className={`flex items-end gap-1 ${own ? 'justify-end' : 'justify-start'}`}>
+                      <span className={`text-[10px] ${
+                        own ? 'text-brand-400' : 'text-neutral-400'
+                      }`}>
+                        {formatLagos(m.created_at, { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {own && (
+                        <>
+                          <span className={`text-[10px] ${getReaders(m).length > 0 ? 'text-green-500' : 'text-neutral-400'}`}>
+                            {getReaders(m).length > 0 ? '✓✓' : '✓'}
+                          </span>
+                          <div className="flex gap-1 ml-1">
+                            {['👍', '❤️', '😂', '🎉'].map((emoji) => (
+                              <button
+                                key={emoji}
+                                onClick={() => addReaction(m.id, emoji)}
+                                className="p-1 text-[10px] hover:bg-white/20 rounded-md"
+                                title={`React ${emoji}`}
+                              >
+                                {emoji} {getReactionCount(m, emoji)}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
               <div ref={messagesEndRef} />
             </div>
-            <form onSubmit={sendMessage} className="px-4 py-3 border-t border-neutral-200 bg-white">
-              <div className="flex gap-2">
-                <button type="button" className="p-2 text-neutral-400 hover:text-neutral-600 disabled:opacity-50" title="Attach" disabled={uploading}>
-                  <Paperclip className="w-4 h-4" />
+
+            <form onSubmit={sendMessage} className="px-4 py-3 border-t border-neutral-200 bg-white shrink-0">
+              <div className="flex gap-2 items-end">
+                <button
+                  type="button"
+                  className="p-2 text-neutral-500 hover:text-brand-600 hover:bg-neutral-100 rounded-md transition-colors disabled:opacity-50"
+                  title="Attach image"
+                  disabled={uploading}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    document.getElementById('chat-image-upload')?.click()
+                  }}
+                >
+                  <Image className="w-4 h-4" />
                 </button>
-                {attachments.length > 0 && (
-            <div className="flex items-center gap-1 px-2 py-1 rounded bg-neutral-100">
-              {attachments.map((f) => (
-                <span key={f.name} className="flex items-center gap-1 text-[10px]">
-                  <button onClick={() => removeAttachment(f)} className="text-red-500 hover:text-red-700">✕</button>
-                  {f.name}
-                </span>
-              ))}
-            </div>
-          )}
                 <input
-                  className="flex-1 input border-l-0 border-r-0 rounded-l-none rounded-r-md pl-3"
+                  id="chat-image-upload"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleImageSelect}
+                />
+
+                {imagePreviews.length > 0 && (
+                  <div className="flex gap-1 overflow-x-auto pb-1">
+                    {imagePreviews.map((preview, i) => (
+                      <div key={i} className="relative flex-shrink-0">
+                        <img
+                          src={preview}
+                          alt="Preview"
+                          className="w-12 h-12 rounded-lg object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            removeImagePreview(i)
+                          }}
+                          className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-500/90 text-white text-[10px] flex items-center justify-center"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <input
+                  className="flex-1 input border-l-0 border-r-0 rounded-l-none rounded-r-md pl-3 pr-3 text-sm min-h-[40px]"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder="Type a message…"
                   disabled={uploading}
                 />
-                <button className="btn-primary px-4" disabled={(!newMessage.trim() && attachments.length === 0) || uploading}>
+                <button
+                  className="btn-primary px-4 rounded-full text-sm min-h-[40px]"
+                  disabled={((!newMessage.trim() && attachments.length === 0 && imagePreviews.length === 0) || uploading)}
+                >
                   <Send className="w-4 h-4" />
                 </button>
               </div>
-              {uploading && <p className="text-[10px] text-neutral-500 mt-1">Uploading attachments…</p>}
+              {uploading && (
+                <p className="text-[10px] text-neutral-500 mt-1">Sending…</p>
+              )}
             </form>
           </div>
         )}

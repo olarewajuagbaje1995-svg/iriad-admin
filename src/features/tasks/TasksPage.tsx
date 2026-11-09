@@ -9,7 +9,7 @@ export default function TasksPage() {
   const { profile } = useAuth()
   const role: Role = (profile?.role as Role) ?? 'staff'
   const userId = profile?.id ?? undefined
-  const { tasks, loading, error, createTask, editTask, deleteTask, updateStatus, refresh } = useTasks({ userId, role })
+  const { tasks, loading, error, createTask, editTask, deleteTask, updateStatus, refresh } = useTasks({ userId, role, organisationId: profile?.organisation_id ?? undefined })
 
   const [newTitle, setNewTitle] = useState('')
   const [newDesc, setNewDesc] = useState('')
