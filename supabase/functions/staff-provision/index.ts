@@ -4,7 +4,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-const APP_BASE_URL = Deno.env.get("APP_BASE_URL")!;
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -201,24 +200,23 @@ serve(async (req) => {
       );
     }
 
-    // Invite the user via Supabase Admin API (sends secure invitation email,
-    // user sets their own password — no plaintext password ever handled here)
-    // redirectTo sends the user back to the app to accept the invitation and set a password.
-    const now = nowLagos().toISOString();
-    const redirectTo = `${APP_BASE_URL}/auth/invitation-accepted`;
-    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-      email.toLowerCase().trim(),
-      { redirectTo },
-    );
+    // Create the auth user with a default password so the new staff member can
+    // log in immediately. The email is auto-confirmed; no invitation email is sent.
+    const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email: email.toLowerCase().trim(),
+      password: "IRIAD2026!",
+      email_confirm: true,
+      user_metadata: { full_name: fullName.trim(), role: targetRole },
+    });
 
-    if (inviteError || !inviteData.user) {
+    if (createError || !createData.user) {
       return json(
-        { ok: false, error: inviteError?.message ?? "Failed to invite user" },
+        { ok: false, error: createError?.message ?? "Failed to create user" },
         400,
       );
     }
 
-    const newUserId = inviteData.user.id;
+    const newUserId = createData.user.id;
 
     // Create the corresponding profiles record using the actual Auth user ID
     const { error: profileError } = await supabaseAdmin.from("profiles").insert({
