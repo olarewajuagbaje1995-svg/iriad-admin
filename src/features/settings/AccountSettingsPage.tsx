@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/useToast'
 import { findAccount } from '@/lib/demoAuth'
 import { ROLE_LABELS, type Role } from '@/config/brand'
 import { User, Lock, RefreshCw } from 'lucide-react'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 
 const MIN_PASSWORD_LENGTH = 8
 
@@ -196,12 +197,11 @@ export default function AccountSettingsPage() {
         <div className="space-y-4">
           <div>
             <label className="label block mb-1">Current password</label>
-            <input
-              className="input"
-              type="password"
+            <PasswordInput
               value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
+              onChange={(value) => setCurrentPassword(value)}
               placeholder="••••••••"
+              autoComplete="current-password"
             />
             <p className="text-[10px] text-neutral-500 mt-1">
               Optional. Leave blank to skip current-password verification.
@@ -209,22 +209,20 @@ export default function AccountSettingsPage() {
           </div>
           <div>
             <label className="label block mb-1">New password</label>
-            <input
-              className="input"
-              type="password"
+            <PasswordInput
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={(value) => setNewPassword(value)}
               placeholder="••••••••"
+              autoComplete="new-password"
             />
           </div>
           <div>
             <label className="label block mb-1">Confirm new password</label>
-            <input
-              className="input"
-              type="password"
+            <PasswordInput
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(value) => setConfirmPassword(value)}
               placeholder="••••••••"
+              autoComplete="new-password"
             />
           </div>
           <button onClick={updatePassword} className="btn-primary text-sm">

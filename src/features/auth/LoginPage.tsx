@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { ShieldCheck, Lock } from 'lucide-react'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -55,12 +56,11 @@ export default function LoginPage() {
             </div>
             <div>
               <label className="label">Password</label>
-              <input
-                className="input"
-                type="password"
+              <PasswordInput
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(value) => setPassword(value)}
                 required
+                autoComplete="current-password"
               />
             </div>
             {error && (
