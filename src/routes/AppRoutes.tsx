@@ -27,6 +27,9 @@ const ApprovalCentrePage = lazy(() => import('@/features/admin/ApprovalCentrePag
 const AutomationControlCentrePage = lazy(() => import('@/features/admin/AutomationControlCentrePage'))
 const ProjectsPage = lazy(() => import('@/features/projects/ProjectsPage'))
 const ProjectTableBuilderPage = lazy(() => import('@/features/projects/ProjectTableBuilderPage'))
+const AnalyticsPage = lazy(() => import('@/features/settings/AnalyticsPage'))
+const AuditLogsPage = lazy(() => import('@/features/settings/AuditLogsPage'))
+const SystemSettingsPage = lazy(() => import('@/features/settings/SystemSettingsPage'))
 
 function NotFound() {
   return (
@@ -84,6 +87,9 @@ export const router = createBrowserRouter([
       { path: 'projects', element: <ProjectsPage /> },
       { path: 'my-projects', element: <ProjectsPage /> },
       { path: 'project-tables', element: <ProjectTableBuilderPage /> },
+      { path: 'analytics', element: <AnalyticsPage /> },
+      { path: 'audit-logs', element: <AuditLogsPage /> },
+      { path: 'system-settings', element: <SystemSettingsPage /> },
       { path: '*', element: <NotFound /> },
     ],
   },

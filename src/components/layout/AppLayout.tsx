@@ -79,9 +79,9 @@ const NAV_PATHS: Record<string, string | null> = {
   'Approval Centre': '/app/approval-centre',
   'My Profile': null,
   'Account Settings': '/app/account-settings',
-  Analytics: null,
-  'Audit Logs': null,
-  'System Settings': null,
+  Analytics: '/app/analytics',
+  'Audit Logs': '/app/audit-logs',
+  'System Settings': '/app/system-settings',
 }
 
 function navItem(label: string): NavItem {

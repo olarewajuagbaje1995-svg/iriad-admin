@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Send, MessageCircle, Users, Plus, Paperclip, Eye, Search } from 'lucide-react'
 import { formatLagos } from '@/lib/dates'
+import { useAuth } from '@/hooks/useAuth'
 
 export default function ChatPage() {
   const [rooms, setRooms] = useState<any[]>([])
@@ -16,6 +17,58 @@ export default function ChatPage() {
 
   const [userId, setUserId] = useState<string | null>(null)
   const channelRef = useRef<any>(null)
+
+  // Create room
+  const { profile } = useAuth()
+  const role: 'admin' | 'director' | 'staff' = (profile?.role as 'admin' | 'director' | 'staff') ?? 'staff'
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [newRoomName, setNewRoomName] = useState('')
+  const [newRoomDescription, setNewRoomDescription] = useState('')
+  const [newRoomPrivate, setNewRoomPrivate] = useState(false)
+  const [creatingRoom, setCreatingRoom] = useState(false)
+
+  const createRoom = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newRoomName.trim()) return
+    if (!userId) return
+
+    setCreatingRoom(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: room, error: err } = await supabase
+        .from('chat_rooms')
+        .insert([{
+          name: newRoomName.trim(),
+          description: newRoomDescription.trim() || null,
+          is_private: newRoomPrivate,
+          who_can_send: 'all',
+          created_by: user.id,
+          organisation_id: profile?.organisation_id ?? null,
+        }])
+        .select()
+        .single()
+      if (err) throw err
+
+      // Add the creator as a room admin.
+      await supabase.from('chat_room_members').insert([{
+        room_id: room.id,
+        profile_id: user.id,
+        is_room_admin: true,
+      }])
+
+      setShowCreateForm(false)
+      setNewRoomName('')
+      setNewRoomDescription('')
+      setNewRoomPrivate(false)
+      await loadRooms()
+    } catch (err: any) {
+      alert(err.message || 'Failed to create room.')
+    } finally {
+      setCreatingRoom(false)
+    }
+  }
 
   useEffect(() => {
     loadRooms()
@@ -174,9 +227,11 @@ export default function ChatPage() {
             <MessageCircle className="w-5 h-5 text-brand-600" />
             <h2 className="text-sm font-semibold text-neutral-900">Chat Rooms</h2>
           </div>
-          <button className="p-1.5 text-neutral-500 hover:text-brand-600" title="New room">
-            <Plus className="w-4 h-4" />
-          </button>
+          {role === 'admin' || role === 'director' ? (
+            <button className="p-1.5 text-neutral-500 hover:text-brand-600" title="New room" onClick={() => setShowCreateForm((s) => !s)}>
+              <Plus className="w-4 h-4" />
+            </button>
+          ) : null}
         </div>
         <div className="relative px-2 pb-1">
           <Search className="absolute left-2 top-2 h-4 w-4 text-neutral-400" />
@@ -188,6 +243,44 @@ export default function ChatPage() {
             onChange={(e) => setRoomSearch(e.target.value)}
           />
         </div>
+
+        {showCreateForm && (
+          <div className="p-2 space-y-2">
+            <form onSubmit={(e) => void createRoom(e)} className="space-y-2">
+              <label className="text-[10px] font-medium text-neutral-600 uppercase">New room</label>
+              <input
+                className="input text-sm"
+                value={newRoomName}
+                onChange={(e) => setNewRoomName(e.target.value)}
+                placeholder="Room name"
+                required
+              />
+              <input
+                className="input text-sm mt-1"
+                value={newRoomDescription}
+                onChange={(e) => setNewRoomDescription(e.target.value)}
+                placeholder="Description (optional)"
+              />
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  id="room-private"
+                  type="checkbox"
+                  checked={newRoomPrivate}
+                  onChange={(e) => setNewRoomPrivate(e.target.checked)}
+                />
+                <label htmlFor="room-private" className="text-xs text-neutral-600">Private room</label>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" className="btn-ghost text-xs flex-1" onClick={() => setShowCreateForm(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary text-xs" disabled={creatingRoom}>
+                  {creatingRoom ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {(() => {
             const filtered = rooms.filter((r) => r.name.toLowerCase().includes(roomSearch.toLowerCase()))
