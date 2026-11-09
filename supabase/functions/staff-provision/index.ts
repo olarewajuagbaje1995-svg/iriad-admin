@@ -203,7 +203,7 @@ serve(async (req) => {
       return json({ ok: false, error: "Failed to check existing accounts" }, 500);
     }
 
-    const existingAuthUser = users?.find((u) => u.email?.toLowerCase() === email.toLowerCase().trim());
+    const existingAuthUser = users?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase().trim());
     if (existingAuthUser) {
       return json(
         { ok: false, error: "An auth account already exists for this email address" },
