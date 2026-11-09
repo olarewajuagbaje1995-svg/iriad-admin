@@ -1,61 +1,86 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { useToast } from '@/hooks/useToast'
+import { findAccount } from '@/lib/demoAuth'
 import { ROLE_LABELS, type Role } from '@/config/brand'
 import { User, Lock, RefreshCw } from 'lucide-react'
 
+const MIN_PASSWORD_LENGTH = 8
+
 export default function AccountSettingsPage() {
-  const { profile, signOut } = useAuth()
+  const { profile, signOut, demoMode } = useAuth()
+  const { toast, success, error } = useToast()
   const role = (profile?.role as Role | null) ?? null
   const [isLoading, setIsLoading] = useState(true)
   const [fullName, setFullName] = useState(profile?.full_name ?? '')
   const [email, setEmail] = useState(profile?.email ?? '')
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url ?? null)
   const [uploading, setUploading] = useState(false)
-  const [message, setMessage] = useState({ text: '', type: 'info' as 'info' | 'success' | 'error' })
 
   useEffect(() => {
     setIsLoading(false)
   }, [profile])
 
-  const setMsg = (text: string, type: 'info' | 'success' | 'error' = 'info') => {
-    setMessage({ text, type })
-    setTimeout(() => setMessage({ text: '', type: 'info' }), 5000)
-  }
-
   const updateProfile = async () => {
     if (!profile?.id) return
     try {
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from('profiles')
         .update({ full_name: fullName, email })
         .eq('id', profile.id)
-      if (error) throw error
-      setMsg('Profile updated successfully.', 'success')
+      if (updateError) throw updateError
+      success('Profile updated successfully.')
     } catch (err: any) {
-      setMsg(err.message || 'Failed to update profile.', 'error')
+      error(err.message || 'Failed to update profile.')
     }
+  }
+
+  /** Optionally verify the current password before allowing a change. */
+  const verifyCurrentPassword = async (): Promise<boolean> => {
+    if (!currentPassword) return true
+    const userEmail = profile?.email
+    if (!userEmail) return false
+    if (demoMode) {
+      const account = findAccount(userEmail)
+      return Boolean(account && account.password === currentPassword)
+    }
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: userEmail,
+      password: currentPassword,
+    })
+    return !signInError
   }
 
   const updatePassword = async () => {
     if (!newPassword || !confirmPassword) {
-      setMsg('Please enter and confirm your new password.', 'error')
+      error('Please enter and confirm your new password.')
       return
     }
     if (newPassword !== confirmPassword) {
-      setMsg('Passwords do not match.', 'error')
+      error('Passwords do not match.')
+      return
+    }
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      error(`New password must be at least ${MIN_PASSWORD_LENGTH} characters.`)
+      return
+    }
+    if (!(await verifyCurrentPassword())) {
+      error('Current password is incorrect.')
       return
     }
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword })
-      if (error) throw error
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+      if (updateError) throw updateError
+      setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-      setMsg('Password updated successfully.', 'success')
+      success('Password updated successfully.')
     } catch (err: any) {
-      setMsg(err.message || 'Failed to update password.', 'error')
+      error(err.message || 'Failed to update password.')
     }
   }
 
@@ -63,11 +88,11 @@ export default function AccountSettingsPage() {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      setMsg('Please upload an image file.', 'error')
+      error('Please upload an image file.')
       return
     }
     setAvatarUrl(URL.createObjectURL(file))
-    setMsg('Avatar selected. Click Save avatar to upload.', 'info')
+    toast('Avatar selected. Click Save avatar to upload.', { type: 'info' })
   }
 
   const saveAvatar = async () => {
@@ -75,16 +100,16 @@ export default function AccountSettingsPage() {
     setUploading(true)
     try {
       // Note: in a real app this would upload to Supabase Storage and store the path
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: avatarUrl })
         .eq('id', profile.id)
-      if (error) throw error
+      if (updateError) throw updateError
       setUploading(false)
-      setMsg('Avatar updated successfully.', 'success')
+      success('Avatar updated successfully.')
     } catch (err: any) {
       setUploading(false)
-      setMsg(err.message || 'Failed to upload avatar.', 'error')
+      error(err.message || 'Failed to upload avatar.')
     }
   }
 
@@ -96,14 +121,6 @@ export default function AccountSettingsPage() {
         <h2 className="text-2xl font-semibold text-neutral-900">Account Settings</h2>
         <p className="text-sm text-neutral-500">Manage your profile, password, email, and avatar.</p>
       </div>
-
-      {message.text && (
-        <div className={`rounded-md p-3 text-sm ${
-          message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' :
-          message.type === 'error' ? 'bg-red-50 text-red-700 border border-red-100' :
-          'bg-blue-50 text-blue-700 border border-blue-100'
-        }`}>{message.text}</div>
-      )}
 
       {/* Profile section */}
       <div className="card p-5">
@@ -177,6 +194,19 @@ export default function AccountSettingsPage() {
       <div className="card p-5">
         <h3 className="text-sm font-semibold text-neutral-900 uppercase tracking-wider mb-4">Password</h3>
         <div className="space-y-4">
+          <div>
+            <label className="label block mb-1">Current password</label>
+            <input
+              className="input"
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="••••••••"
+            />
+            <p className="text-[10px] text-neutral-500 mt-1">
+              Optional. Leave blank to skip current-password verification.
+            </p>
+          </div>
           <div>
             <label className="label block mb-1">New password</label>
             <input
