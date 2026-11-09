@@ -489,7 +489,11 @@ export default function TasksPage() {
                       <select
                         className="w-32 px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-sm text-neutral-600 focus:ring-2 focus:ring-brand-600 focus:border-brand-600 outline-none transition-all"
                         value={t.status}
-                        onChange={(e) => void updateStatus(t.id, e.target.value as any, 'Status updated')}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          void updateStatus(t.id, e.target.value as any, 'Status updated')
+                        }}
                       >
                         {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
                           <option key={key} value={key}>{cfg.label}</option>
