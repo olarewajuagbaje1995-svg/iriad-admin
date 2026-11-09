@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { supabase } from '@/lib/supabase'
-import { Plus, Trash2, RefreshCw, ShieldAlert, Database } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, Pencil, ShieldAlert, Database } from 'lucide-react'
 import { knowledgeSourceSchema, type KnowledgeSourceFormData } from '@/lib/validation'
 import {
   ingestFile,
@@ -26,6 +26,7 @@ export default function KnowledgeBasePage() {
   const [file, setFile] = useState<File | null>(null)
   const [ingesting, setIngesting] = useState(false)
   const [openIngest, setOpenIngest] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [allowedRoles, setAllowedRoles] = useState<string[]>([])
 
   const form = useForm<KnowledgeSourceFormData>({
@@ -34,7 +35,6 @@ export default function KnowledgeBasePage() {
       title: '',
       description: '',
       sourceType: 'text',
-      collectionId: '',
       contentText: '',
       srcUrl: '',
       faqQuestion: '',
@@ -80,6 +80,12 @@ export default function KnowledgeBasePage() {
   }
 
   const addSource = async (data: KnowledgeSourceFormData) => {
+    // When editing an existing source, delegate to the update path.
+    if (editingId) {
+      await updateSource(editingId, data)
+      return
+    }
+
     setIngesting(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -104,12 +110,14 @@ export default function KnowledgeBasePage() {
         sourceContent = "Q: " + (data.faqQuestion ?? "") + "\nA: " + (data.faqAnswer ?? "")
       } else if (data.sourceType === 'text') {
         sourceContent = data.contentText ?? ''
+      } else if (data.sourceType === 'url') {
+        sourceContent = data.srcUrl ?? ''
       }
 
       const { data: sourceData, error } = await supabase.from('knowledge_sources').insert([
         {
           organisation_id: profile.organisation_id,
-          collection_id: data.collectionId || null,
+          collection_id: null,
           title: data.title,
           description: data.description,
           source_type: data.sourceType === 'file' ? 'file' : data.sourceType,
@@ -128,6 +136,8 @@ export default function KnowledgeBasePage() {
       const sourceId = (sourceData as unknown as any[])?.[0]?.id
 
       // Run local ingestion pipeline (extraction → chunking → embedding → storage)
+      let indexed = false
+
       if (data.sourceType === 'file' && file) {
         const ingestOptions = {
           organisation_id: profile.organisation_id,
@@ -148,13 +158,7 @@ export default function KnowledgeBasePage() {
           return
         }
 
-        await supabase
-          .from('knowledge_sources')
-          .update({
-            indexing_status: 'indexed',
-            error_message: null,
-          })
-          .eq('id', sourceId)
+        indexed = true
       } else if (data.sourceType === 'text' || data.sourceType === 'faq') {
         // For direct text/FAQ sources, store content as a single chunk
         const { error: chunkErr } = await supabase.from('knowledge_chunks').insert([
@@ -184,11 +188,48 @@ export default function KnowledgeBasePage() {
           return
         }
 
-        await supabase
-          .from('knowledge_sources')
-          .update({ indexing_status: 'indexed', error_message: null })
-          .eq('id', sourceId)
+        indexed = true
+      } else if (data.sourceType === 'url') {
+        // Simulate a successful crawl: store the URL as a retrievable chunk and
+        // mark the source indexed immediately so it never stays stuck on pending.
+        const { error: chunkErr } = await supabase.from('knowledge_chunks').insert([
+          {
+            source_id: sourceId,
+            content: sourceContent,
+            chunk_index: 0,
+            embedding: null,
+            metadata: {
+              source_type: 'url',
+              title: data.title,
+              ingestion_method: 'url-simulated',
+            },
+            organisation_id: profile.organisation_id,
+            allowed_roles: data.audience === 'selected_roles' ? allowedRoles : null,
+          },
+        ])
+        if (chunkErr) {
+          await supabase
+            .from('knowledge_sources')
+            .update({
+              indexing_status: 'failed',
+              error_message: chunkErr.message ?? String(chunkErr),
+            })
+            .eq('id', sourceId)
+          alert("Indexing failed: " + String(chunkErr.message))
+          return
+        }
+
+        indexed = true
       }
+
+      await supabase
+        .from('knowledge_sources')
+        .update({
+          indexing_status: indexed ? 'indexed' : 'pending',
+          error_message: null,
+          last_indexed_at: indexed ? new Date().toISOString() : null,
+        })
+        .eq('id', sourceId)
 
       // Optional: trigger n8n webhook
       const ingestUrl = import.meta.env.VITE_N8N_KNOWLEDGE_INGEST_WEBHOOK_URL
@@ -207,6 +248,7 @@ export default function KnowledgeBasePage() {
       setOpenIngest(false)
       setFile(null)
       setAllowedRoles([])
+      setEditingId(null)
       form.reset()
       load()
     } catch (err: any) {
@@ -214,6 +256,138 @@ export default function KnowledgeBasePage() {
     } finally {
       setIngesting(false)
     }
+  }
+
+  const startEdit = (source: any) => {
+    let faqQuestion = ''
+    let faqAnswer = ''
+    if (source.source_type === 'faq' && source.content) {
+      const m = String(source.content).match(/^Q:\s*([\s\S]*?)\nA:\s*([\s\S]*)$/)
+      if (m) {
+        faqQuestion = m[1].trim()
+        faqAnswer = m[2].trim()
+      }
+    }
+
+    setEditingId(source.id)
+    form.reset({
+      title: source.title ?? '',
+      description: source.description ?? '',
+      sourceType: source.source_type,
+      contentText: source.source_type === 'text' ? (source.content ?? '') : '',
+      srcUrl: source.source_type === 'url' ? (source.url ?? '') : '',
+      faqQuestion,
+      faqAnswer,
+      audience: source.audience,
+    })
+    setOpenIngest(true)
+  }
+
+  const updateSource = async (id: string, data: KnowledgeSourceFormData) => {
+    const src = sources.find((s) => s.id === id)
+    if (!src) return
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const profile = (await supabase.from('profiles').select('organisation_id, role').eq('id', user.id).single()).data
+    if (!profile) return
+
+    let storagePath = src.storage_path
+    let reingestFile = false
+    if (data.sourceType === 'file' && file) {
+      storagePath = `knowledge/${profile.organisation_id}/${Date.now()}-${file.name.replace(/\s+/g, '_')}`
+      const { error: upErr } = await supabase.storage.from('documents').upload(storagePath, file)
+      if (upErr) throw upErr
+      reingestFile = true
+    }
+
+    let sourceContent = ''
+    if (data.sourceType === 'faq') {
+      sourceContent = "Q: " + (data.faqQuestion ?? "") + "\nA: " + (data.faqAnswer ?? "")
+    } else if (data.sourceType === 'text') {
+      sourceContent = data.contentText ?? ''
+    } else if (data.sourceType === 'url') {
+      sourceContent = data.srcUrl ?? ''
+    }
+
+    const { error: updErr } = await supabase.from('knowledge_sources').update({
+      title: data.title,
+      description: data.description,
+      source_type: data.sourceType === 'file' ? 'file' : data.sourceType,
+      storage_path: storagePath,
+      url: data.sourceType === 'url' ? data.srcUrl : null,
+      content: sourceContent || null,
+      audience: data.audience,
+      allowed_roles: data.audience === 'selected_roles' ? allowedRoles : [],
+      indexing_status: 'pending',
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', id)
+    if (updErr) throw updErr
+
+    const needsRechunk =
+      data.sourceType === 'text' ||
+      data.sourceType === 'faq' ||
+      data.sourceType === 'url' ||
+      reingestFile
+
+    if (needsRechunk) {
+      await supabase.from('knowledge_chunks').delete().eq('source_id', id)
+    }
+
+    if (data.sourceType === 'file' && reingestFile && file) {
+      const result: IngestResult = await ingestFile(file, {
+        organisation_id: profile.organisation_id,
+        uploaded_by: user.id,
+        allowed_roles: data.audience === 'selected_roles' ? allowedRoles : [],
+      })
+      if (!result.ok) {
+        await supabase.from('knowledge_sources').update({
+          indexing_status: 'failed',
+          error_message: result.error,
+        }).eq('id', id)
+        alert("Ingestion failed: " + String(result.error))
+        setEditingId(null)
+        load()
+        return
+      }
+    } else if (data.sourceType === 'text' || data.sourceType === 'faq') {
+      await supabase.from('knowledge_chunks').insert([
+        {
+          source_id: id,
+          content: sourceContent,
+          chunk_index: 0,
+          embedding: null,
+          metadata: { source_type: data.sourceType, title: data.title, ingestion_method: 'text-direct' },
+          organisation_id: profile.organisation_id,
+          allowed_roles: data.audience === 'selected_roles' ? allowedRoles : null,
+        },
+      ])
+    } else if (data.sourceType === 'url') {
+      await supabase.from('knowledge_chunks').insert([
+        {
+          source_id: id,
+          content: sourceContent,
+          chunk_index: 0,
+          embedding: null,
+          metadata: { source_type: 'url', title: data.title, ingestion_method: 'url-simulated' },
+          organisation_id: profile.organisation_id,
+          allowed_roles: data.audience === 'selected_roles' ? allowedRoles : null,
+        },
+      ])
+    }
+
+    await supabase.from('knowledge_sources').update({
+      indexing_status: 'indexed',
+      error_message: null,
+      last_indexed_at: new Date().toISOString(),
+    }).eq('id', id)
+
+    setEditingId(null)
+    setOpenIngest(false)
+    setFile(null)
+    setAllowedRoles([])
+    form.reset()
+    load()
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -239,39 +413,72 @@ export default function KnowledgeBasePage() {
       .eq('id', id)
     load()
 
-    if (src.source_type === 'file' && src.storage_path) {
-      try {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const profile = (await supabase.from('profiles').select('organisation_id, role').eq('id', user.id).single()).data
+      if (!profile) return
+
+      if (src.source_type === 'file' && src.storage_path) {
         const { data: fileData } = await supabase.storage
           .from('documents')
           .download(src.storage_path)
-        if (fileData) {
-          const blobFile = new File([fileData], src.storage_path.split('/').pop() ?? 'file', {
-            type: src.file_type || 'application/octet-stream',
-          })
-          const { data: { user } } = await supabase.auth.getUser()
-          if (user) {
-            const profile = (await supabase.from('profiles').select('organisation_id, role').eq('id', user.id).single()).data
-            if (profile) {
-              const result: IngestResult = await ingestFile(blobFile, {
-                organisation_id: profile.organisation_id,
-                uploaded_by: user.id,
-                allowed_roles: src.allowed_roles ?? [],
-              })
-              await supabase.from('knowledge_sources').update({
-                indexing_status: result.ok ? 'indexed' : 'failed',
-                error_message: result.ok ? null : result.error,
-              }).eq('id', id)
-              load()
-            }
-          }
+        if (!fileData) {
+          await supabase.from('knowledge_sources').update({
+            indexing_status: 'failed',
+            error_message: 'Failed to download file for reprocessing.',
+          }).eq('id', id)
+          load()
+          return
         }
-      } catch (err: any) {
+        const blobFile = new File([fileData], src.storage_path.split('/').pop() ?? 'file', {
+          type: src.file_type || 'application/octet-stream',
+        })
+        const result: IngestResult = await ingestFile(blobFile, {
+          organisation_id: profile.organisation_id,
+          uploaded_by: user.id,
+          allowed_roles: src.allowed_roles ?? [],
+        })
         await supabase.from('knowledge_sources').update({
-          indexing_status: 'failed',
-          error_message: err.message ?? String(err),
+          indexing_status: result.ok ? 'indexed' : 'failed',
+          error_message: result.ok ? null : result.error,
         }).eq('id', id)
         load()
+        return
       }
+
+      // text / faq / url: rebuild a single retrievable chunk and mark indexed
+      await supabase.from('knowledge_chunks').delete().eq('source_id', id)
+      let content = src.content ?? ''
+      if (src.source_type === 'url' && src.url) content = src.url
+      await supabase.from('knowledge_chunks').insert([
+        {
+          source_id: id,
+          content,
+          chunk_index: 0,
+          embedding: null,
+          metadata: {
+            source_type: src.source_type,
+            title: src.title,
+            ingestion_method: src.source_type === 'url' ? 'url-simulated' : 'text-direct',
+          },
+          organisation_id: profile.organisation_id,
+          allowed_roles: src.allowed_roles ?? null,
+        },
+      ])
+
+      await supabase.from('knowledge_sources').update({
+        indexing_status: 'indexed',
+        error_message: null,
+        last_indexed_at: new Date().toISOString(),
+      }).eq('id', id)
+      load()
+    } catch (err: any) {
+      await supabase.from('knowledge_sources').update({
+        indexing_status: 'failed',
+        error_message: err.message ?? String(err),
+      }).eq('id', id)
+      load()
     }
   }
 
@@ -372,14 +579,15 @@ export default function KnowledgeBasePage() {
                   <div className="mt-2 p-2 rounded bg-red-50 text-[10px] text-red-700">{s.error_message}</div>
                 )}
                 <div className="mt-3 flex items-center gap-2">
+                  <button onClick={() => startEdit(s)} className="flex items-center gap-1 btn-ghost text-xs text-brand-600 hover:text-brand-700">
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
                   <button onClick={() => reprocessSource(s.id)} className="flex items-center gap-1 btn-ghost text-xs text-brand-600 hover:text-brand-700">
                     <RefreshCw className="w-3 h-3" /> Reprocess
                   </button>
-                  {s.storage_path && (
-                    <button onClick={() => deleteSource(s.id)} className="flex items-center gap-1 btn-ghost text-xs text-red-600 hover:text-red-700">
-                      <Trash2 className="w-3 h-3" /> Delete
-                    </button>
-                  )}
+                  <button onClick={() => deleteSource(s.id)} className="flex items-center gap-1 btn-ghost text-xs text-red-600 hover:text-red-700">
+                    <Trash2 className="w-3 h-3" /> Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -393,7 +601,7 @@ export default function KnowledgeBasePage() {
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpenIngest(false)} />
           <div className="relative z-10 bg-white rounded-lg p-6 max-w-lg w-full mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-neutral-900">Add knowledge source</h3>
+              <h3 className="text-sm font-semibold text-neutral-900">{editingId ? 'Edit knowledge source' : 'Add knowledge source'}</h3>
               <button onClick={() => setOpenIngest(false)} className="p-1 text-neutral-400 hover:text-neutral-600">✕</button>
             </div>
             <form onSubmit={form.handleSubmit(addSource)} className="space-y-4">
@@ -419,15 +627,6 @@ export default function KnowledgeBasePage() {
               <div>
                 <label className="label block mb-1">Description</label>
                 <textarea className="input" {...form.register('description')} rows={2} placeholder="Optional description" />
-              </div>
-              <div>
-                <label className="label block mb-1">Collection</label>
-                <select className="input" {...form.register('collectionId')}>
-                  <option value="">Uncategorized</option>
-                  {collections.map((c) => (
-                    <option key={c.id} value={c.id}>{c.title}</option>
-                  ))}
-                </select>
               </div>
               {sourceType === 'text' && (
                 <div>

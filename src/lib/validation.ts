@@ -28,7 +28,6 @@ export const knowledgeSourceSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   description: z.string().optional(),
   sourceType: z.enum(['text', 'url', 'faq', 'file']),
-  collectionId: z.string().optional(),
   contentText: z.string().optional(),
   srcUrl: z.string().url('Enter a valid URL').optional(),
   faqQuestion: z.string().optional(),
