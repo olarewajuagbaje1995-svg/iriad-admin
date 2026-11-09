@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Plus } from 'lucide-react'
+import { useAuth } from '@/hooks/useAuth'
+import { Plus, Trash2, Pencil, Save } from 'lucide-react'
 
 export default function ProjectsPage() {
+  const { profile } = useAuth()
+  const role: string = (profile?.role as string) ?? 'staff'
+
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -14,6 +18,17 @@ export default function ProjectsPage() {
   const [formStatus, setFormStatus] = useState('planning')
   const [creating, setCreating] = useState(false)
   const [staff, setStaff] = useState<{ id: string; full_name: string }[]>([])
+
+  // Edit project state.
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editLeadId, setEditLeadId] = useState<string | null>(null)
+  const [editStartDate, setEditStartDate] = useState('')
+  const [editEndDate, setEditEndDate] = useState('')
+  const [editStatus, setEditStatus] = useState('')
+
+  const canManageProject = () => role === 'admin' || role === 'director'
 
   useEffect(() => {
     load()
@@ -91,6 +106,63 @@ export default function ProjectsPage() {
       alert(err.message || 'Failed to create project.')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const startEditProject = (p: any) => {
+    if (!canManageProject()) return
+    setEditingProjectId(p.id)
+    setEditTitle(p.title)
+    setEditDescription(p.description ?? '')
+    setEditLeadId(p.project_lead_id ?? null)
+    setEditStartDate(p.start_date ?? '')
+    setEditEndDate(p.end_date ?? '')
+    setEditStatus(p.status)
+  }
+
+  const cancelEditProject = () => {
+    setEditingProjectId(null)
+    setEditTitle('')
+    setEditDescription('')
+    setEditLeadId(null)
+    setEditStartDate('')
+    setEditEndDate('')
+    setEditStatus('')
+  }
+
+  const handleEditProjectSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingProjectId) return
+    try {
+      const { error: err } = await supabase
+        .from('projects')
+        .update({
+          title: editTitle,
+          description: editDescription || null,
+          project_lead_id: editLeadId || undefined,
+          start_date: editStartDate || null,
+          end_date: editEndDate || null,
+          status: editStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingProjectId)
+      if (err) throw err
+      cancelEditProject()
+      load()
+    } catch (err: any) {
+      alert(err.message || 'Failed to update project.')
+    }
+  }
+
+  const handleDeleteProject = async (id: string) => {
+    if (!canManageProject()) return
+    if (!window.confirm('Delete this project?')) return
+    try {
+      const { error: err } = await supabase.from('projects').delete().eq('id', id)
+      if (err) throw err
+      load()
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete project.')
     }
   }
 
@@ -190,6 +262,86 @@ export default function ProjectsPage() {
         </div>
       )}
 
+      {editingProjectId && canManageProject() && (
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-neutral-900 uppercase tracking-wider mb-4">Edit project</h3>
+          <form onSubmit={handleEditProjectSave} className="space-y-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="col-span-2 sm:col-span-2">
+              <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Project title</label>
+              <input
+                className="input w-full"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                required
+              />
+            </div>
+            <div className="col-span-2 sm:col-span-2">
+              <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Description</label>
+              <input
+                className="input w-full"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+              />
+            </div>
+            <div className="col-span-1 sm:col-span-1">
+              <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Project lead</label>
+              <select
+                className="input w-full"
+                value={editLeadId ?? ''}
+                onChange={(e) => setEditLeadId(e.target.value || null)}
+              >
+                <option value="">Myself</option>
+                {staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-1 sm:col-span-1">
+              <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Start date</label>
+              <input
+                type="date"
+                className="input w-full"
+                value={editStartDate}
+                onChange={(e) => setEditStartDate(e.target.value)}
+              />
+            </div>
+            <div className="col-span-1 sm:col-span-1">
+              <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">End date</label>
+              <input
+                type="date"
+                className="input w-full"
+                value={editEndDate}
+                onChange={(e) => setEditEndDate(e.target.value)}
+              />
+            </div>
+            <div className="col-span-1 sm:col-span-1">
+              <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Status</label>
+              <select
+                className="input w-full"
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+              >
+                <option value="planning">Planning</option>
+                <option value="active">Active</option>
+                <option value="on_hold">On hold</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div className="col-span-2 sm:col-auto flex items-end gap-2">
+              <button type="button" className="btn-ghost mr-2" onClick={cancelEditProject}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary">
+                <Save className="w-4 h-4 mr-1" /> Save
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       <div className="card p-5">
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
@@ -200,6 +352,7 @@ export default function ProjectsPage() {
                 <th className="pb-3">Dates</th>
                 <th className="pb-3">Status</th>
                 <th className="pb-3">Members</th>
+                <th className="pb-3">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -225,6 +378,28 @@ export default function ProjectsPage() {
                     </td>
                     <td className="py-3 text-neutral-600 text-sm">
                       {(p.project_members as any[])?.length ?? 0} members
+                    </td>
+                    <td className="py-3 text-right">
+                      {canManageProject() ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            className="btn-ghost text-xs p-1.5 text-neutral-500 hover:text-brand-600"
+                            title="Edit project"
+                            onClick={() => startEditProject(p)}
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-ghost text-xs p-1.5 text-neutral-500 hover:text-red-600"
+                            title="Delete project"
+                            onClick={() => handleDeleteProject(p.id)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 ))

@@ -42,16 +42,51 @@ export function useTasks({ userId, role }: UseTasksOptions = {}) {
   useEffect(() => { void load() }, [load])
 
   const createTask = async (task: Partial<Task> & { assigneeId?: string }) => {
-    const { data, error: err } = await supabase.from('tasks').insert([task]).select().single()
+    // assigneeId is not a column on the tasks table — assign via the task_assignees join table.
+    const { assigneeId, ...taskData } = task
+    const { data, error: err } = await supabase.from('tasks').insert([taskData]).select().single()
     if (err) { setError(err.message); return null }
-    if (task.assigneeId) {
+    if (assigneeId) {
       await supabase.from('task_assignees').insert([{
         task_id: data.id,
-        profile_id: task.assigneeId,
+        profile_id: assigneeId,
         assigned_by: userId,
       }])
     }
     setTasks([data, ...tasks])
+    return data
+  }
+
+  const editTask = async (id: string, updates: {
+    title?: string
+    description?: string | null
+    status?: string
+    priority?: string
+    due_date?: string | null
+    assigneeId?: string | null
+  }) => {
+    const { assigneeId, ...taskData } = updates
+    const { data, error: err } = await supabase
+      .from('tasks')
+      .update({ ...taskData, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    if (err) { setError(err.message); return null }
+
+    // Refresh assignee via the join table when an assignee change is requested.
+    if (assigneeId !== undefined) {
+      await supabase.from('task_assignees').delete().eq('task_id', id)
+      if (assigneeId) {
+        await supabase.from('task_assignees').insert([{
+          task_id: id,
+          profile_id: assigneeId,
+          assigned_by: userId,
+        }])
+      }
+    }
+
+    setTasks(tasks.map((t) => (t.id === id ? data! : t)))
     return data
   }
 
@@ -69,5 +104,12 @@ export function useTasks({ userId, role }: UseTasksOptions = {}) {
     return data
   }
 
-  return { tasks, loading, error, createTask, updateStatus, refresh: load }
+  const deleteTask = async (id: string) => {
+    const { error: err } = await supabase.from('tasks').delete().eq('id', id)
+    if (err) { setError(err.message); return false }
+    setTasks(tasks.filter((t) => t.id !== id))
+    return true
+  }
+
+  return { tasks, loading, error, createTask, editTask, deleteTask, updateStatus, refresh: load }
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Send, MessageCircle, Users, Plus, Paperclip, Eye, Search } from 'lucide-react'
+import { Send, MessageCircle, Users, Plus, Paperclip, Eye, Search, Trash2, Pencil, Save } from 'lucide-react'
 import { formatLagos } from '@/lib/dates'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -26,6 +26,63 @@ export default function ChatPage() {
   const [newRoomDescription, setNewRoomDescription] = useState('')
   const [newRoomPrivate, setNewRoomPrivate] = useState(false)
   const [creatingRoom, setCreatingRoom] = useState(false)
+
+  // Edit room state.
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
+  const [editRoomName, setEditRoomName] = useState('')
+  const [editRoomDescription, setEditRoomDescription] = useState('')
+  const [editRoomPrivate, setEditRoomPrivate] = useState(false)
+
+  const canManageRoom = () => role === 'admin' || role === 'director'
+
+  const startEditRoom = (room: any) => {
+    if (!canManageRoom()) return
+    setEditingRoomId(room.id)
+    setEditRoomName(room.name)
+    setEditRoomDescription(room.description ?? '')
+    setEditRoomPrivate(room.is_private)
+  }
+
+  const cancelEditRoom = () => {
+    setEditingRoomId(null)
+    setEditRoomName('')
+    setEditRoomDescription('')
+    setEditRoomPrivate(false)
+  }
+
+  const handleEditRoomSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingRoomId) return
+    try {
+      const { error: err } = await supabase
+        .from('chat_rooms')
+        .update({
+          name: editRoomName.trim(),
+          description: editRoomDescription.trim() || null,
+          is_private: editRoomPrivate,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingRoomId)
+      if (err) throw err
+      cancelEditRoom()
+      await loadRooms()
+    } catch (err: any) {
+      alert(err.message || 'Failed to update room.')
+    }
+  }
+
+  const handleDeleteRoom = async (id: string) => {
+    if (!canManageRoom()) return
+    if (!window.confirm('Delete this room?')) return
+    try {
+      const { error: err } = await supabase.from('chat_rooms').delete().eq('id', id)
+      if (err) throw err
+      await loadRooms()
+      if (currentRoom?.id === id) setCurrentRoom(null)
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete room.')
+    }
+  }
 
   const createRoom = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -281,6 +338,44 @@ export default function ChatPage() {
             </form>
           </div>
         )}
+
+        {editingRoomId && canManageRoom() && (
+          <div className="p-2 space-y-2">
+            <h3 className="text-[10px] font-medium text-neutral-600 uppercase mb-1">Edit room</h3>
+            <form onSubmit={handleEditRoomSave} className="space-y-2">
+              <input
+                className="input text-sm"
+                value={editRoomName}
+                onChange={(e) => setEditRoomName(e.target.value)}
+                placeholder="Room name"
+                required
+              />
+              <input
+                className="input text-sm mt-1"
+                value={editRoomDescription}
+                onChange={(e) => setEditRoomDescription(e.target.value)}
+                placeholder="Description (optional)"
+              />
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  id="edit-room-private"
+                  type="checkbox"
+                  checked={editRoomPrivate}
+                  onChange={(e) => setEditRoomPrivate(e.target.checked)}
+                />
+                <label htmlFor="edit-room-private" className="text-xs text-neutral-600">Private room</label>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" className="btn-ghost text-xs flex-1" onClick={cancelEditRoom}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary text-xs">
+                  <Save className="w-3 h-3 mr-1" /> Save
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {(() => {
             const filtered = rooms.filter((r) => r.name.toLowerCase().includes(roomSearch.toLowerCase()))
@@ -288,16 +383,44 @@ export default function ChatPage() {
               return <div className="text-center py-10 text-neutral-500 text-sm">No chat rooms available.</div>
             }
             return filtered.map((room) => (
-              <button
-                key={room.id}
-                onClick={() => openRoom(room)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
-                  currentRoom?.id === room.id ? 'bg-brand-50 text-brand-700' : 'text-neutral-600 hover:bg-neutral-100'
-                }`}
-              >
-                <div className="flex-1">{room.name}</div>
-                <span className="text-xs text-neutral-400">{room.who_can_send}</span>
-              </button>
+              <div key={room.id} className="flex items-center justify-between px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => openRoom(room)}
+                  className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm transition-colors ${
+                    currentRoom?.id === room.id ? 'bg-brand-50 text-brand-700' : 'text-neutral-600 hover:bg-neutral-100'
+                  }`}
+                >
+                  <div className="flex-1">{room.name}</div>
+                  <span className="text-xs text-neutral-400">{room.who_can_send}</span>
+                </button>
+                {canManageRoom() && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="btn-ghost text-xs p-1.5 text-neutral-500 hover:text-brand-600"
+                      title="Edit room"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        startEditRoom(room)
+                      }}
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost text-xs p-1.5 text-neutral-500 hover:text-red-600"
+                      title="Delete room"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteRoom(room.id)
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
             ))
           })()}
         </div>
