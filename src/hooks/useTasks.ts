@@ -21,7 +21,7 @@ export function useTasks({ userId, role, organisationId }: UseTasksOptions = {})
     try {
       let query = supabase
         .from('tasks')
-        .select('*, task_assignees!task_assignees_profile_id_fkey(profile_id, profiles(full_name)), task_updates(*)')
+        .select('*, task_assignees!task_assignees_task_id_fkey(profile_id, profiles(full_name)), task_updates(*)')
         .order('created_at', { ascending: false })
         .limit(100)
 
