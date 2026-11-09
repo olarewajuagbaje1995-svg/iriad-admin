@@ -144,19 +144,23 @@ export default function TasksPage() {
             />
           </div>
           <div className="col-span-1 sm:col-span-1">
-            <label className="label">Assign to</label>
-            <select
-              className="input"
-              value={newAssignee ?? ''}
-              onChange={(e) => setNewAssignee(e.target.value || null)}
-            >
-              <option value="">Unassigned</option>
-              {staff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.full_name}
-                </option>
-              ))}
-            </select>
+            {role !== 'staff' && (
+              <>
+                <label className="label">Assign to</label>
+                <select
+                  className="input"
+                  value={newAssignee ?? ''}
+                  onChange={(e) => setNewAssignee(e.target.value || null)}
+                >
+                  <option value="">Unassigned</option>
+                  {staff.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
           <div className="col-span-1 sm:col-span-1">
             <label className="label">Due date</label>
@@ -213,19 +217,23 @@ export default function TasksPage() {
                       />
                     </div>
                     <div className="col-span-1 sm:col-span-1">
-                      <label className="label">Assign to</label>
-                      <select
-                        className="input"
-                        value={editAssignee ?? ''}
-                        onChange={(e) => setEditAssignee(e.target.value || null)}
-                      >
-                        <option value="">Unassigned</option>
-                        {staff.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.full_name}
-                          </option>
-                        ))}
-                      </select>
+                      {role !== 'staff' && (
+                        <>
+                          <label className="label">Assign to</label>
+                          <select
+                            className="input"
+                            value={editAssignee ?? ''}
+                            onChange={(e) => setEditAssignee(e.target.value || null)}
+                          >
+                            <option value="">Unassigned</option>
+                            {staff.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.full_name}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      )}
                     </div>
                     <div className="col-span-1 sm:col-span-1">
                       <label className="label">Due date</label>

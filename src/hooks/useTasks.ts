@@ -20,14 +20,9 @@ export function useTasks({ userId, role }: UseTasksOptions = {}) {
     try {
       let query = supabase
         .from('tasks')
-        .select('*, task_assignees(profile_id, profiles(full_name)), task_updates(*)')
+        .select('*, task_assignees!task_assignees_profile_id_fkey(profile_id, profiles(full_name)), task_updates(*)')
         .order('created_at', { ascending: false })
         .limit(100)
-
-      // Staff only see tasks assigned to them; admins/directors see everything.
-      if (role === 'staff' && userId) {
-        query = query.eq('task_assignees.profile_id', userId)
-      }
 
       const { data, error: err } = await query
       if (err) throw err

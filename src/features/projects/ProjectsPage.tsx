@@ -39,7 +39,7 @@ export default function ProjectsPage() {
     try {
       const { data } = await supabase
         .from('projects')
-        .select('*, project_members(profile_id), profiles(full_name)')
+        .select('*, project_members(profile_id), profiles!projects_project_lead_id_fkey(full_name)')
         .order('created_at', { ascending: false })
         .limit(50)
       setProjects(data ?? [])
@@ -204,19 +204,23 @@ export default function ProjectsPage() {
               />
             </div>
             <div className="col-span-1 sm:col-span-1">
-              <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Project lead</label>
-              <select
-                className="input w-full"
-                value={formLeadId ?? ''}
-                onChange={(e) => setFormLeadId(e.target.value || null)}
-              >
-                <option value="">Myself</option>
-                {staff.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name}
-                  </option>
-                ))}
-              </select>
+              {role !== 'staff' && (
+                <>
+                  <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Project lead</label>
+                  <select
+                    className="input w-full"
+                    value={formLeadId ?? ''}
+                    onChange={(e) => setFormLeadId(e.target.value || null)}
+                  >
+                    <option value="">Myself</option>
+                    {staff.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
             </div>
             <div className="col-span-1 sm:col-span-1">
               <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Start date</label>
@@ -284,19 +288,23 @@ export default function ProjectsPage() {
               />
             </div>
             <div className="col-span-1 sm:col-span-1">
-              <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Project lead</label>
-              <select
-                className="input w-full"
-                value={editLeadId ?? ''}
-                onChange={(e) => setEditLeadId(e.target.value || null)}
-              >
-                <option value="">Myself</option>
-                {staff.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.full_name}
-                  </option>
-                ))}
-              </select>
+              {role !== 'staff' && (
+                <>
+                  <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Project lead</label>
+                  <select
+                    className="input w-full"
+                    value={editLeadId ?? ''}
+                    onChange={(e) => setEditLeadId(e.target.value || null)}
+                  >
+                    <option value="">Myself</option>
+                    {staff.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
             </div>
             <div className="col-span-1 sm:col-span-1">
               <label className="label block mb-1 text-xs font-medium text-neutral-600 uppercase">Start date</label>
