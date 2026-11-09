@@ -108,6 +108,9 @@ export default function TasksPage() {
   const assigneeName = (task: any) => {
     const assignee = task.task_assignees?.[0]
     if (!assignee) return 'Unassigned'
+    // profiles(full_name) is joined via the task_assignees relation in useTasks.load().
+    const profileName = assignee.profiles?.full_name
+    if (profileName) return profileName
     const staffMember = staff.find((s) => s.id === assignee.profile_id)
     return staffMember ? staffMember.full_name : assignee.profile_id
   }

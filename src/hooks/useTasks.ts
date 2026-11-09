@@ -20,7 +20,7 @@ export function useTasks({ userId, role }: UseTasksOptions = {}) {
     try {
       let query = supabase
         .from('tasks')
-        .select('*, task_assignees(profile_id), task_updates(*)')
+        .select('*, task_assignees(profile_id, profiles(full_name)), task_updates(*)')
         .order('created_at', { ascending: false })
         .limit(100)
 
@@ -47,11 +47,16 @@ export function useTasks({ userId, role }: UseTasksOptions = {}) {
     const { data, error: err } = await supabase.from('tasks').insert([taskData]).select().single()
     if (err) { setError(err.message); return null }
     if (assigneeId) {
-      await supabase.from('task_assignees').insert([{
+      const { error: assigneeErr } = await supabase.from('task_assignees').insert([{
         task_id: data.id,
         profile_id: assigneeId,
         assigned_by: userId,
       }])
+      if (assigneeErr) {
+        console.error('task_assignees insert failed:', assigneeErr)
+      } else {
+        console.log('task_assignees insert succeeded for task_id:', data.id)
+      }
     }
     setTasks([data, ...tasks])
     return data

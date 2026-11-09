@@ -90,6 +90,29 @@ create policy chat_rooms_delete_admin_dir on public.chat_rooms
   );
 
 -- ---------------------------------------------------------------------------
+-- 4. RLS policy: INSERT on task_assignees for task creators
+-- ---------------------------------------------------------------------------
+
+-- Admins/directors can manage all task_assignees (existing policy
+-- task_assignees_manage_admin_dir). Additionally allow the creator of a task
+-- to insert an assignee for their own task, so regular staff members can
+-- assign tasks they create without hitting a silent RLS failure.
+drop policy if exists task_assignees_insert_creator on public.task_assignees;
+create policy task_assignees_insert_creator on public.task_assignees
+  for insert with check (
+    exists (
+      select 1 from public.tasks t
+      where t.id = task_id
+      and t.created_by = auth.uid()
+    )
+    or exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid()
+      and p.role in ('admin', 'director')
+    )
+  );
+
+-- ---------------------------------------------------------------------------
 -- 3. Flush the Supabase schema cache so the new policies take effect immediately.
 -- ---------------------------------------------------------------------------
 notify pgrst, 'reload schema';
