@@ -41,9 +41,15 @@ async function authenticateCaller(req: Request) {
     throw new Error("Missing or invalid authorization header");
   }
 
-  const token = authHeader.slice(7);
+  const token = req.headers.get("Authorization")?.replace("Bearer ", "");
+  console.log("[staff-provision] Extracted JWT token:", token ? "present" : "missing");
+
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    headers: { Authorization: `Bearer ${token}` },
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
   });
 
   const { data: { user }, error: userError } = await userClient.auth.getUser();
