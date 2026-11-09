@@ -3,13 +3,20 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { FileText, FileCheck, RefreshCw, Search } from 'lucide-react'
 import { useReports } from '@/hooks/useReports'
+import { useAuth } from '@/hooks/useAuth'
 import { reportSchema, type ReportFormData } from '@/lib/validation'
 import { generateReportPDF, type ReportPDFData } from '@/lib/pdf'
+import type { Role } from '@/config/brand'
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState<'weekly' | 'monthly'>('weekly')
   const [searchTerm, setSearchTerm] = useState('')
-  const { reports, loading, error, createReport, submitReport, refresh } = useReports(reportType)
+
+  const { profile } = useAuth()
+  const userId = profile?.id
+  const role: Role = (profile?.role as Role) ?? 'staff'
+
+  const { reports, loading, error, createReport, submitReport, refresh } = useReports({ reportType, userId, role })
 
   const form = useForm<ReportFormData>({
     resolver: zodResolver(reportSchema),
@@ -210,28 +217,51 @@ export default function ReportsPage() {
                 return (
                   <div key={r.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-neutral-200 bg-white">
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-neutral-900">{periodLabel} {period ? new Date(period).toLocaleDateString() : '—'}</div>
-                      <div className="text-xs text-neutral-500">{(r as any).activities_carried_out?.slice(0, 80) ?? ''}…</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-medium text-neutral-900">{periodLabel} {period ? new Date(period).toLocaleDateString() : '—'}</div>
+                        {(r as any).profiles && (
+                          <span className="text-xs text-neutral-500">• {(r as any).profiles.full_name}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs text-neutral-500">{`${(r as any).activities_carried_out?.slice(0, 80) ?? ''}`}…</div>
+                        {(r as any).profiles?.avatar_url && (
+                          <img
+                            src={(r as any).profiles.avatar_url}
+                            className="w-6 h-6 rounded-full border border-neutral-200"
+                            alt="Author avatar"
+                          />
+                        )}
+                      </div>
                     </div>
-                    <span className={`px-2.5 py-1 rounded text-[10px] font-semibold capitalize ${
-                      r.status === 'approved' ? 'bg-green-100 text-green-700' :
-                      r.status === 'submitted' ? 'bg-blue-100 text-blue-700' :
-                      r.status === 'revision_requested' ? 'bg-amber-100 text-amber-700' :
-                      r.status === 'draft' ? 'bg-neutral-100 text-neutral-600' :
-                      'bg-red-100 text-red-700'
-                    }`}>
-                      {r.status.replace('_', ' ')}
-                    </span>
-                    {r.status === 'draft' && (
-                      <button onClick={() => submitReport(r.id!)} className="btn-ghost text-xs text-brand-600 hover:text-brand-700">Submit</button>
-                    )}
-                    <button
-                      onClick={() => generateReportPDF(toPDFData(r))}
-                      className="btn-ghost text-xs text-neutral-600 hover:text-neutral-800"
-                      title="Download PDF"
-                    >
-                      PDF
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {(r as any).profiles?.avatar_url && (
+                        <img
+                          src={(r as any).profiles.avatar_url}
+                          className="w-6 h-6 rounded-full border border-neutral-200"
+                          alt="Author avatar"
+                        />
+                      )}
+                      <span className={`px-2.5 py-1 rounded text-[10px] font-semibold capitalize ${
+                        r.status === 'approved' ? 'bg-green-100 text-green-700' :
+                        r.status === 'submitted' ? 'bg-blue-100 text-blue-700' :
+                        r.status === 'revision_requested' ? 'bg-amber-100 text-amber-700' :
+                        r.status === 'draft' ? 'bg-neutral-100 text-neutral-600' :
+                        'bg-red-100 text-red-700'
+                      }`}>
+                        {r.status.replace('_', ' ')}
+                      </span>
+                      {r.status === 'draft' && (
+                        <button onClick={() => submitReport(r.id!)} className="btn-ghost text-xs text-brand-600 hover:text-brand-700">Submit</button>
+                      )}
+                      <button
+                        onClick={() => generateReportPDF(toPDFData(r))}
+                        className="btn-ghost text-xs text-neutral-600 hover:text-neutral-800"
+                        title="Download PDF"
+                      >
+                        PDF
+                      </button>
+                    </div>
                   </div>
                 )
               })}

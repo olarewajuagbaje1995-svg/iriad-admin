@@ -1,11 +1,18 @@
 import { useState, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
+import type { Role } from '@/config/brand'
 
 type WeeklyReport = Database['public']['Tables']['weekly_reports']['Row']
 type MonthlyReport = Database['public']['Tables']['monthly_reports']['Row']
 
-export function useReports(reportType: 'weekly' | 'monthly' = 'weekly') {
+interface UseReportsOptions {
+  reportType?: 'weekly' | 'monthly'
+  userId?: string
+  role?: Role
+}
+
+export function useReports({ reportType = 'weekly', userId, role }: UseReportsOptions = {}) {
   const [reports, setReports] = useState<(WeeklyReport | MonthlyReport)[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -15,25 +22,34 @@ export function useReports(reportType: 'weekly' | 'monthly' = 'weekly') {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await supabase
+      let query = supabase
         .from(table)
-        .select('*, profiles(full_name)')
+        .select('*, profiles(full_name, avatar_url)')
         .order('created_at', { ascending: false })
         .limit(50)
+
+      // Strict role-based frontend filtering:
+      // admin/director see ALL reports from the organization.
+      // staff only see reports where they are the author (staff_id).
+      if (role === 'staff' && userId) {
+        query = query.eq('staff_id', userId)
+      }
+
+      const { data } = await query
       setReports((data ?? []) as (WeeklyReport | MonthlyReport)[])
     } catch (e: any) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [table])
+  }, [table, userId, role])
 
-  useEffect(() => { load() }, [load, table])
+  useEffect(() => { void load() }, [load, table])
 
   const createReport = async (report: Partial<WeeklyReport | MonthlyReport>) => {
     const { data, error: err } = await supabase
       .from(table)
-      .insert([{ ...report, status: 'draft' }])
+      .insert([{ ...report, status: 'draft', staff_id: userId ?? undefined }])
       .select()
       .single()
     if (err) { setError(err.message); return null }
