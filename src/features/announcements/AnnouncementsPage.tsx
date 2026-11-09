@@ -53,36 +53,37 @@ export default function AnnouncementsPage() {
     e.preventDefault()
     if (!formTitle.trim() || !formBody.trim()) return
 
-    const webhookUrl = import.meta.env.VITE_N8N_ANNOUNCEMENT_WEBHOOK_URL
-    if (!webhookUrl) {
-      setError('Announcement webhook is not configured. Please contact your administrator.')
+    const userId = profile?.id
+    const organisationId = profile?.organisation_id
+    if (!userId || !organisationId) {
+      setError('You must be signed in to an organisation to create announcements.')
       return
     }
 
     setSending(true)
     setError(null)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (user) headers['Authorization'] = `Bearer ${(await supabase.auth.getSession()).data.session?.access_token ?? ''}`
-
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
+      const { error: err } = await supabase
+        .from('announcements')
+        .insert([{
           title: formTitle.trim(),
           body: formBody.trim(),
-          category: formCategory.trim() || 'general',
-          created_by: user?.id,
-        }),
-      })
+          category: formCategory.trim() || null,
+          organisation_id: organisationId,
+          created_by: userId,
+          is_published: true,
+          published_at: new Date().toISOString(),
+        }])
+
+      if (err) throw err
+
       setShowForm(false)
       setFormTitle('')
       setFormBody('')
       setFormCategory('')
       await load()
     } catch (err: any) {
-      setError(err.message || 'Failed to send announcement webhook.')
+      setError(err.message || 'Failed to create announcement.')
     } finally {
       setSending(false)
     }
