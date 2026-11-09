@@ -183,90 +183,109 @@ serve(async (req) => {
       return json({ ok: false, error: "Caller has no organisation" }, 403);
     }
 
-    // Duplicate prevention: check if a profile already exists for this email
-    const { data: existingProfile } = await supabaseAdmin
-      .from("profiles")
-      .select("id, email, role, is_active")
-      .eq("email", email.toLowerCase().trim())
-      .maybeSingle();
+    // Duplicate prevention, auth user creation, and profile insert are wrapped
+    // in try/catch so unexpected failures return a clean JSON error instead of
+    // an unhandled 500 exception.
+    try {
+      // Duplicate prevention: check if a profile already exists for this email
+      const { data: existingProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, role, is_active")
+        .eq("email", email.toLowerCase().trim())
+        .maybeSingle();
 
-    if (existingProfile) {
-      return json(
-        { ok: false, error: "A profile already exists for this email address" },
-        409,
-      );
-    }
+      if (existingProfile) {
+        return json(
+          { ok: false, error: "A profile already exists for this email address" },
+          409,
+        );
+      }
 
-    // Check if an auth user already exists for this email
-    const { data: users, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-    if (listError) {
-      return json({ ok: false, error: "Failed to check existing accounts" }, 500);
-    }
+      // Check if an auth user already exists for this email
+      const { data: users, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+      if (listError) {
+        return json({ ok: false, error: "Failed to check existing accounts" }, 500);
+      }
 
-    const existingAuthUser = users?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase().trim());
-    if (existingAuthUser) {
-      return json(
-        { ok: false, error: "An auth account already exists for this email address" },
-        409,
-      );
-    }
+      const existingAuthUser = users?.users?.find((u) => u.email?.toLowerCase() === email.toLowerCase().trim());
+      if (existingAuthUser) {
+        return json(
+          { ok: false, error: "An auth account already exists for this email address" },
+          409,
+        );
+      }
 
-    // Create the auth user with a default password so the new staff member can
-    // log in immediately. The email is auto-confirmed; no invitation email is sent.
-    const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email: email.toLowerCase().trim(),
-      password: "IRIAD2026!",
-      email_confirm: true,
-      user_metadata: { full_name: fullName.trim(), role: targetRole },
-    });
-
-    if (createError || !createData.user) {
-      console.log("[staff-provision] createUser failed:", createError?.message ?? createError);
-      return json(
-        { ok: false, error: createError?.message ?? "Failed to create user" },
-        400,
-      );
-    }
-
-    const newUserId = createData.user.id;
-
-    // Create the corresponding profiles record using the actual Auth user ID
-    const { error: profileError } = await supabaseAdmin.from("profiles").insert({
-      id: newUserId,
-      organisation_id: callerOrgId,
-      department_id: departmentId || null,
-      email: email.toLowerCase().trim(),
-      full_name: fullName.trim(),
-      role: targetRole,
-      is_active: true,
-    });
-
-    if (profileError) {
-      // Safe compensation: delete the orphaned auth user so we don't leave
-      // an account with no profile
-      await supabaseAdmin.auth.admin.deleteUser(newUserId).catch(() => {
-        /* best-effort cleanup */
+      // Create the auth user with a default password so the new staff member can
+      // log in immediately. The email is auto-confirmed; no invitation email is sent.
+      const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: email.toLowerCase().trim(),
+        password: "IRIAD2026!",
+        email_confirm: true,
+        user_metadata: { full_name: fullName.trim(), role: targetRole },
       });
-      return json({ ok: false, error: profileError.message ?? "Failed to create profile" }, 400);
+
+      if (createError || !createData.user) {
+        const message = createError?.message ?? "";
+        // Supabase returns 409 when the email is already registered
+        if (createError?.status === 409 || /already registered|already exists/i.test(message)) {
+          return json({ ok: false, error: "User already exists" }, 409);
+        }
+        console.log("[staff-provision] createUser failed:", createError?.message ?? createError);
+        return json(
+          { ok: false, error: createError?.message ?? "Failed to create user" },
+          400,
+        );
+      }
+
+      const newUserId = createData.user.id;
+
+      // Create the corresponding profiles record using the actual Auth user ID
+      const { error: profileError } = await supabaseAdmin.from("profiles").insert({
+        id: newUserId,
+        organisation_id: callerOrgId,
+        department_id: departmentId || null,
+        email: email.toLowerCase().trim(),
+        full_name: fullName.trim(),
+        role: targetRole,
+        is_active: true,
+      });
+
+      if (profileError) {
+        // Safe compensation: delete the orphaned auth user so we don't leave
+        // an account with no profile
+        await supabaseAdmin.auth.admin.deleteUser(newUserId).catch(() => {
+          /* best-effort cleanup */
+        });
+        return json({ ok: false, error: profileError.message ?? "Failed to create profile" }, 400);
+      }
+
+      // Write audit entry
+      await supabaseAdmin.from("staff_audit_log").insert({
+        staff_id: newUserId,
+        actor_id: callerId,
+        action: "created",
+        old_value: null,
+        new_value: targetRole,
+        organisation_id: callerOrgId,
+      });
+
+      return json({
+        ok: true,
+        data: {
+          userId: newUserId,
+          email: email.toLowerCase().trim(),
+          role: targetRole,
+        },
+        message: "Staff account created successfully",
+      }, 200);
+    } catch (err) {
+      console.error("[staff-provision] create action error:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (/already registered|already exists/i.test(message)) {
+        return json({ ok: false, error: "User already exists" }, 409);
+      }
+      return json({ ok: false, error: "Failed to create staff account" }, 500);
     }
-
-    // Write audit entry
-    await supabaseAdmin.from("staff_audit_log").insert({
-      staff_id: newUserId,
-      actor_id: callerId,
-      action: "created",
-      old_value: null,
-      new_value: targetRole,
-      organisation_id: callerOrgId,
-    });
-
-    return json({
-      ok: true,
-      userId: newUserId,
-      email: inviteData.user.email,
-      role: targetRole,
-      message: "Invitation sent. The user can set their password via the invitation link.",
-    }, 200);
   }
 
   // =========================================================
