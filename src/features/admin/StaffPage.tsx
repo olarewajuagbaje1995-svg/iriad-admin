@@ -265,8 +265,8 @@ export default function StaffPage() {
 
       {openAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpenAdd(false)} />
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpenAdd(false)} />
+          <div className="relative z-10 bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-neutral-900">Add staff account</h3>
               <button onClick={() => setOpenAdd(false)} className="p-1 text-neutral-400 hover:text-neutral-600">✕</button>

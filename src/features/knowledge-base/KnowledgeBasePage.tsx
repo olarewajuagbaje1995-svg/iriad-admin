@@ -80,13 +80,13 @@ export default function KnowledgeBasePage() {
   }
 
   const addSource = async (data: KnowledgeSourceFormData) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const profile = (await supabase.from('profiles').select('organisation_id, role').eq('id', user.id).single()).data
-    if (!profile) return
-
     setIngesting(true)
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const profile = (await supabase.from('profiles').select('organisation_id, role').eq('id', user.id).single()).data
+      if (!profile) return
+
       let storagePath: string | null = null
 
       // Handle file upload
@@ -101,7 +101,7 @@ export default function KnowledgeBasePage() {
       // Build content based on type
       let sourceContent = ''
       if (data.sourceType === 'faq') {
-        sourceContent = `Q: ${data.faqQuestion ?? ''}\nA: ${data.faqAnswer ?? ''}`
+        sourceContent = "Q: " + (data.faqQuestion ?? "") + "\nA: " + (data.faqAnswer ?? "")
       } else if (data.sourceType === 'text') {
         sourceContent = data.contentText ?? ''
       }
@@ -128,14 +128,11 @@ export default function KnowledgeBasePage() {
       const sourceId = (sourceData as unknown as any[])?.[0]?.id
 
       // Run local ingestion pipeline (extraction → chunking → embedding → storage)
-      // instead of only delegating to n8n. n8n webhook remains as an optional
-      // secondary trigger; the local pipeline is the source of truth.
       if (data.sourceType === 'file' && file) {
         const ingestOptions = {
           organisation_id: profile.organisation_id,
           uploaded_by: user.id,
-          allowed_roles:
-            data.audience === 'selected_roles' ? allowedRoles : [],
+          allowed_roles: data.audience === 'selected_roles' ? allowedRoles : [],
         }
         const result: IngestResult = await ingestFile(file, ingestOptions)
 
@@ -147,8 +144,7 @@ export default function KnowledgeBasePage() {
               error_message: result.error,
             })
             .eq('id', sourceId)
-          setIngesting(false)
-          alert(`Ingestion failed: ${result.error}`)
+          alert("Ingestion failed: " + String(result.error))
           return
         }
 
@@ -163,7 +159,7 @@ export default function KnowledgeBasePage() {
         // For direct text/FAQ sources, store content as a single chunk
         const { error: chunkErr } = await supabase.from('knowledge_chunks').insert([
           {
-            document_id: sourceId,
+            source_id: sourceId,
             content: sourceContent,
             chunk_index: 0,
             embedding: null,
@@ -173,8 +169,7 @@ export default function KnowledgeBasePage() {
               ingestion_method: 'text-direct',
             },
             organisation_id: profile.organisation_id,
-            allowed_roles:
-              data.audience === 'selected_roles' ? allowedRoles : null,
+            allowed_roles: data.audience === 'selected_roles' ? allowedRoles : null,
           },
         ])
         if (chunkErr) {
@@ -185,8 +180,7 @@ export default function KnowledgeBasePage() {
               error_message: chunkErr.message ?? String(chunkErr),
             })
             .eq('id', sourceId)
-          setIngesting(false)
-          alert(`Indexing failed: ${chunkErr.message}`)
+          alert("Indexing failed: " + String(chunkErr.message))
           return
         }
 
@@ -196,7 +190,7 @@ export default function KnowledgeBasePage() {
           .eq('id', sourceId)
       }
 
-      // Optional: also trigger n8n webhook for any downstream automation
+      // Optional: trigger n8n webhook
       const ingestUrl = import.meta.env.VITE_N8N_KNOWLEDGE_INGEST_WEBHOOK_URL
       if (ingestUrl && sourceId) {
         try {
@@ -213,12 +207,12 @@ export default function KnowledgeBasePage() {
       setOpenIngest(false)
       setFile(null)
       setAllowedRoles([])
-      setIngesting(false)
       form.reset()
       load()
     } catch (err: any) {
-      setIngesting(false)
       alert(err.message || 'Failed to create source')
+    } finally {
+      setIngesting(false)
     }
   }
 
@@ -245,7 +239,6 @@ export default function KnowledgeBasePage() {
       .eq('id', id)
     load()
 
-    // Re-run local ingestion for file sources
     if (src.source_type === 'file' && src.storage_path) {
       try {
         const { data: fileData } = await supabase.storage
@@ -348,7 +341,7 @@ export default function KnowledgeBasePage() {
                   <div className="flex-1">
                     <div className="text-sm font-medium text-neutral-900">{s.title}</div>
                     <div className="text-xs text-neutral-500">
-                      {s.source_type} • {(s.knowledge_collections as any)?.title ?? 'Uncategorized'} • Audience: {s.audience.replace('_', ' ')}
+                      {s.source_type} - {(s.knowledge_collections as any)?.title ?? 'Uncategorized'} - Audience: {s.audience.replace('_', ' ')}
                     </div>
                     {s.storage_path && (
                       <div className="text-[10px] text-neutral-400 mt-1">File: {s.storage_path.split('/').pop()}</div>
@@ -397,8 +390,8 @@ export default function KnowledgeBasePage() {
       {/* Ingestion modal */}
       {openIngest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpenIngest(false)} />
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 shadow-xl">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpenIngest(false)} />
+          <div className="relative z-10 bg-white rounded-lg p-6 max-w-lg w-full mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-neutral-900">Add knowledge source</h3>
               <button onClick={() => setOpenIngest(false)} className="p-1 text-neutral-400 hover:text-neutral-600">✕</button>
