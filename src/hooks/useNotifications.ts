@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const { data } = await supabase
@@ -20,7 +20,7 @@ export function useNotifications() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => { load() }, [load])
 

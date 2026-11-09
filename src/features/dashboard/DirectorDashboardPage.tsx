@@ -16,20 +16,19 @@ export default function DirectorDashboardPage() {
   const role = (profile?.role as Role | null) ?? null
   const canViewAll = isAdminOrDirector(role)
 
-  if (!canViewAll) {
-    return (
-      <div className="p-6 text-center text-neutral-500">
-        <p>You do not have permission to view the organisational dashboard.</p>
-      </div>
-    )
-  }
-
+  // 1. ALL HOOKS MUST BE DECLARED AT THE TOP
   const [stats, setStats] = useState({ staff: 0, projects: 0, tasks: 0, reports: 0 })
   const [attendanceTrend, setAttendanceTrend] = useState<{ date: string; checkedIn: number }[]>([])
   const [recentActivities, setRecentActivities] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Skip fetching database metrics if they don't have permission
+    if (!canViewAll) {
+      setLoading(false)
+      return
+    }
+
     const load = async () => {
       try {
         const [p, pr, t, rep, att, act] = await Promise.all([
@@ -68,7 +67,16 @@ export default function DirectorDashboardPage() {
       }
     }
     load()
-  }, [profile])
+  }, [profile, canViewAll])
+
+  // 2. CONDITIONAL RETURNS COME AFTER HOOKS
+  if (!canViewAll) {
+    return (
+      <div className="p-6 text-center text-neutral-500">
+        <p>You do not have permission to view the organisational dashboard.</p>
+      </div>
+    )
+  }
 
   if (loading) return <div className="p-6">Loading director dashboard…</div>
 
@@ -124,7 +132,7 @@ export default function DirectorDashboardPage() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-neutral-900">{a.title ?? a.notification_type ?? 'Activity'}</div>
                     <div className="text-xs text-neutral-500">
-                      {(a.profiles as any)?.full_name ?? 'System'} • {new Date(a.created_at).toLocaleDateString()}
+                      {(a.profiles as any)?.full_name ?? 'System'} - {new Date(a.created_at).toLocaleDateString()}
                     </div>
                   </div>
                 </div>

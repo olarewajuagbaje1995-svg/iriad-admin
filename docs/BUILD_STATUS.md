@@ -74,10 +74,11 @@ Use: `[x]` Completed and verified. `[~]` Currently working. `[ ]` Not started. `
 
 - TypeScript type check (`tsc --noEmit`) — [x] PASS (zero errors)
 - Production build (`vite build`) — [x] PASS (~1,042 KB JS)
-- Unit/integration tests (vitest) — [x] 43 tests passing across 6 files:
+- Unit/integration tests (vitest) — [x] 60 tests passing across 7 files:
   - `src/lib/dates.test.ts` (7)
   - `src/lib/permissions.test.ts` (7)
   - `src/lib/attendance-boundary.test.ts` (8)
+  - `src/lib/knowledge/ai-failover.test.ts` (17)
   - `src/features/attendance/duplicate-prevention.test.ts` (6)
   - `src/features/chat/chat.integration.test.ts` (6)
   - `src/features/knowledge-base/rag-access.test.ts` (9)
@@ -85,7 +86,7 @@ Use: `[x]` Completed and verified. `[~]` Currently working. `[ ]` Not started. `
 - Search/filter — [x] applied to ReportsPage reports list, ChatPage rooms list
 - PDF generation — [x] `src/lib/pdf.ts` with print-to-PDF report download button on ReportsPage
 - Lint (eslint) — [ ] NOT RUN (config not yet added)
-- n8n workflow JSONs — [x] 1 master workflow + 1 error handler + 11 archived legacy files
+- n8n workflow JSONs — [x] 1 master workflow (`n8n/IRIAD_MASTER_WORKFLOW.json`, 229 nodes) + 1 error handler (`n8n/IRIAD_ERROR_HANDLER.json`); both validate clean (294 checks, 0 failures). 11 modular workflow JSONs are valid real n8n JSON but live in `n8n/workflows/archived/` (none active directly in `n8n/workflows/`); `evening-signout-open-close.json` is one combined file, not the separate open/close pair the README tree shows. None imported/tested against live n8n yet.
 - DEPLOYMENT.md — [x] created with local setup/deployment instructions
 - Live Supabase connection — [!] BLOCKED (no real `.env` credentials yet)
 - RLS/permission tests against live DB — [!] pending credentials
@@ -98,9 +99,11 @@ Apply migrations to Supabase project `rvjpdfudghwqcxldrkri`, create real `.env` 
 
 ## Known limitations
 
-- No real secrets configured yet (Supabase secret key previously exposed — rotate before use; NVIDIA_API_KEY placeholder in .env.example)
-- Database tables not yet created in Supabase (migrations not applied)
+- Local (gitignored, uncommitted) `.env` holds real-looking credentials, including `SUPABASE_SECRET_KEY` (service role), `NVIDIA_API_KEY` and a `Groq_API_KEY`; per READ.ME §2 the previously exposed Supabase secret key must be rotated before use. `.env` is not in version control.
+- `VITE_DEMO_MODE=true` in local `.env` — demo auth is active, so live Supabase Auth + RLS are not validated end-to-end until real credentials are configured and demo mode is off.
+- Database tables not yet created in Supabase (migrations 001–013 not applied to project `rvjpdfudghwqcxldrkri`)
 - No end-to-end integration tested against live Supabase yet
+- n8n workflows not imported/activated against a live n8n instance
 - Auth is placeholder-gated until real Auth users + seed profiles exist
 
 ## Phase 8 — n8n consolidation and Resend removal — [x] COMPLETE

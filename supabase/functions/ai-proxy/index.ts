@@ -3,6 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // --- AI provider configuration (server-side only, never exposed to frontend) ---
 const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") || "";
@@ -22,9 +25,69 @@ const CIRCUIT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes before retrying unhealth
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
+  });
+}
+
 /** Return the current moment expressed in Africa/Lagos wall-clock time. */
 function nowLagos(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+}
+
+/**
+ * Authenticate the caller from the Bearer JWT in the request.
+ * Returns the caller's profile and organisation, or throws a 401/403.
+ */
+async function authenticateCaller(req: Request) {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new Error("Missing or invalid authorization header");
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  });
+
+  const { data: { user }, error: userError } = await userClient.auth.getUser();
+  if (userError || !user) {
+    throw new Error("Unauthorized: invalid session");
+  }
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("id, email, full_name, role, organisation_id, is_active")
+    .eq("id", user.id)
+    .single();
+
+  if (profileError || !profile) {
+    throw new Error("Forbidden: caller profile not found");
+  }
+
+  if (profile.is_active === false) {
+    throw new Error("Forbidden: caller account is deactivated");
+  }
+
+  return {
+    callerId: profile.id as string,
+    callerOrgId: profile.organisation_id as string | null,
+  };
 }
 
 type ProviderName = 'nvidia' | 'groq';
@@ -381,23 +444,30 @@ function selectProvider(
 serve(async (req) => {
   const now = nowLagos().toISOString();
 
-  // Only allow POST
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ ok: false, error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  // CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders() });
   }
+
+  if (req.method !== 'POST') {
+    return json({ ok: false, error: 'Method not allowed' }, 405);
+  }
+
+  let caller: { callerId: string; callerOrgId: string | null };
+  try {
+    caller = await authenticateCaller(req);
+  } catch (err) {
+    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 401);
+  }
+
+  const { callerId, callerOrgId } = caller;
 
   try {
     const body = await req.json();
-    const { query, conversation_id, profile_id, organisation_id } = body;
+    const { query, conversation_id, profile_id } = body;
 
     if (!query || typeof query !== 'string') {
-      return new Response(JSON.stringify({ ok: false, error: 'Missing query parameter' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return json({ ok: false, error: 'Missing query parameter' }, 400);
     }
 
     // Get provider health for both providers
@@ -410,21 +480,18 @@ serve(async (req) => {
     // Step 1: Embed the query using NVIDIA (embeddings always use NVIDIA for dimension consistency)
     const embeddingResult = await embedWithNvidia(query);
     if (!embeddingResult.ok) {
-      return new Response(JSON.stringify({
+      return json({
         ok: false,
         error: `Embedding failed: ${embeddingResult.error}`,
         provider: 'nvidia',
-      }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      }, 502);
     }
 
     // Step 2: Search knowledge chunks
     const allowedRoles = body.allowed_roles ?? null;
     const searchResult = await searchKnowledgeChunks(
       embeddingResult.embedding,
-      organisation_id ?? null,
+      callerOrgId,
       allowedRoles,
     );
 
@@ -473,7 +540,7 @@ serve(async (req) => {
     if (!answer) {
       // Both providers failed
       await supabase.from('automation_runs').insert({
-        organisation_id: organisation_id ?? null,
+        organisation_id: callerOrgId,
         workflow_name: 'ai-proxy-failover',
         trigger: 'event',
         status: 'failed',
@@ -482,19 +549,16 @@ serve(async (req) => {
         output: { errors, primary: AI_PRIMARY_PROVIDER },
       });
 
-      return new Response(JSON.stringify({
+      return json({
         ok: false,
         error: 'All AI providers are temporarily unavailable. Please try again later.',
         providers_attempted: errors.map(e => e.provider),
-      }), {
-        status: 503,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      }, 503);
     }
 
     // Success - record the run
     await supabase.from('automation_runs').insert({
-      organisation_id: organisation_id ?? null,
+      organisation_id: callerOrgId,
       workflow_name: `ai-proxy-${activeProvider}`,
       trigger: 'event',
       status: 'completed',
@@ -503,25 +567,19 @@ serve(async (req) => {
       output: { provider: activeProvider, sources: chunks.map(c => c.id) },
     });
 
-    return new Response(JSON.stringify({
+    return json({
       ok: true,
       answer,
       provider: activeProvider,
       sources: chunks.map(c => ({ id: c.id, similarity: c.similarity })),
       providers_attempted: errors.length > 0 ? errors.map(e => e.provider) : [],
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
     });
 
   } catch (err) {
     console.error('ai-proxy error:', err);
-    return new Response(JSON.stringify({
+    return json({
       ok: false,
       error: err instanceof Error ? err.message : String(err),
-    }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    }, 500);
   }
 });
