@@ -25,9 +25,41 @@ export function useTasks({ userId, role, organisationId }: UseTasksOptions = {})
         .order('created_at', { ascending: false })
         .limit(100)
 
+      // Strict role-based frontend filtering: staff only see tasks they created
+      // or are assigned to via task_assignees.
+      if (role === 'staff' && userId) {
+        query = query.or(`created_by.eq.${userId}`)
+      }
+
       const { data, error: err } = await query
       if (err) throw err
-      setTasks(data ?? [])
+
+      let result = data ?? []
+
+      // For staff, also include tasks where they are an assignee via task_assignees.
+      if (role === 'staff' && userId) {
+        const { data: assignees } = await supabase
+          .from('task_assignees')
+          .select('task_id')
+          .eq('profile_id', userId)
+
+        const assigneeTaskIds = (assignees ?? []).map((a: any) => a.task_id)
+        const newAssigneeTaskIds = assigneeTaskIds.filter(
+          (id: string) => !result.find((t: any) => t.id === id)
+        )
+
+        if (newAssigneeTaskIds.length > 0) {
+          const { data: assignedTasks } = await supabase
+            .from('tasks')
+            .select('*, task_assignees!task_assignees_task_id_fkey(profile_id, profiles!task_assignees_profile_id_fkey(full_name)), task_updates(*)')
+            .in('id', newAssigneeTaskIds)
+            .order('created_at', { ascending: false })
+
+          result = [...result, ...(assignedTasks ?? [])]
+        }
+      }
+
+      setTasks(result)
     } catch (e: any) {
       setError(e.message)
     } finally {
