@@ -69,5 +69,24 @@ export function useReports({ reportType = 'weekly', userId, role }: UseReportsOp
     return data
   }
 
-  return { reports, loading, error, createReport, submitReport, refresh: load }
+  const updateReport = async (id: string, updates: Partial<WeeklyReport | MonthlyReport>) => {
+    const { data, error: err } = await supabase
+      .from(table)
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    if (err) { setError(err.message); return null }
+    setReports(reports.map((r) => (r.id === id ? data : r)))
+    return data
+  }
+
+  const deleteReport = async (id: string) => {
+    const { error: err } = await supabase.from(table).delete().eq('id', id)
+    if (err) { setError(err.message); return false }
+    setReports(reports.filter((r) => r.id !== id))
+    return true
+  }
+
+  return { reports, loading, error, createReport, submitReport, updateReport, deleteReport, refresh: load }
 }
