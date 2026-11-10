@@ -233,20 +233,6 @@ export default function KnowledgeBasePage() {
         })
         .eq('id', sourceId)
 
-      // Optional: trigger n8n webhook
-      const ingestUrl = import.meta.env.VITE_N8N_KNOWLEDGE_INGEST_WEBHOOK_URL
-      if (ingestUrl && sourceId) {
-        try {
-          await fetch(ingestUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source_id: sourceId }),
-          })
-        } catch {
-          // Webhook failure should not block source creation
-        }
-      }
-
       setOpenIngest(false)
       setFile(null)
       setAllowedRoles([])
