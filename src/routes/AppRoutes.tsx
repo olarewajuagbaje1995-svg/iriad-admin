@@ -17,7 +17,7 @@ const ChatPage = lazy(() => import('@/features/chat/ChatPage'))
 const AnnouncementsPage = lazy(() => import('@/features/announcements/AnnouncementsPage'))
 const DocumentsPage = lazy(() => import('@/features/documents/DocumentsPage'))
 const CalendarPage = lazy(() => import('@/features/calendar/CalendarPage'))
-const KnowledgeBasePage = lazy(() => import('@/features/knowledge-base/KnowledgeBasePage'))
+// const KnowledgeBasePage = lazy(() => import('@/features/knowledge-base/KnowledgeBasePage'))
 const ChatbotPage = lazy(() => import('@/features/chatbot/ChatbotPage'))
 const NotificationsPage = lazy(() => import('@/features/notifications/NotificationsPage'))
 const AccountSettingsPage = lazy(() => import('@/features/settings/AccountSettingsPage'))
@@ -75,8 +75,8 @@ export const router = createBrowserRouter([
       { path: 'announcements', element: <AnnouncementsPage /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'calendar', element: <CalendarPage /> },
-      { path: 'knowledge-base', element: <KnowledgeBasePage /> },
-      { path: 'knowledge-assistant', element: <ChatbotPage /> },
+      // { path: 'knowledge-base', element: <KnowledgeBasePage /> },
+      // { path: 'knowledge-assistant', element: <ChatbotPage /> },
       { path: 'chatbot', element: <ChatbotPage /> },
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'account-settings', element: <AccountSettingsPage /> },

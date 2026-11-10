@@ -2,7 +2,7 @@ import { Suspense, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Menu, LogOut, Bell, Briefcase, Calendar, LayoutDashboard, Clock,
-  CheckSquare, FileText, MessageCircle, Book, File, Users, CheckCircle2,
+  CheckSquare, FileText, MessageCircle, File, Users, CheckCircle2,
   Settings, BarChart, User, Megaphone,
 } from 'lucide-react'
 import { brand, NAVIGATION, type Role } from '@/config/brand'
@@ -32,8 +32,6 @@ const ICONS: Record<string, JSX.Element> = {
   'Chat Room Management': <MessageCircle className="w-4 h-4" />,
   Announcements: <Megaphone className="w-4 h-4" />,
   'Announcements & Feedback': <Megaphone className="w-4 h-4" />,
-  'Knowledge Assistant': <Book className="w-4 h-4" />,
-  'Knowledge Base': <Book className="w-4 h-4" />,
   Documents: <File className="w-4 h-4" />,
   Calendar: <Calendar className="w-4 h-4" />,
   'Calendar & Events': <Calendar className="w-4 h-4" />,
@@ -68,8 +66,6 @@ const NAV_PATHS: Record<string, string | null> = {
   'Chat Room Management': '/app/chat',
   Announcements: '/app/announcements',
   'Announcements & Feedback': '/app/announcements',
-  'Knowledge Assistant': '/app/knowledge-assistant',
-  'Knowledge Base': '/app/knowledge-base',
   Documents: '/app/documents',
   Calendar: '/app/calendar',
   'Calendar & Events': '/app/calendar',
