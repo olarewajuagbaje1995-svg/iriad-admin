@@ -9,9 +9,15 @@ const corsHeaders = {
 
 const LAGOS_TZ = 'Africa/Lagos'
 
-/** Current moment expressed in Africa/Lagos wall-clock time. */
+/** Current moment expressed in Africa/Lagos wall-clock time.
+ *
+ * NOTE: A Date is a single instant in time; the timezone only matters when we
+ * format or extract components. Do NOT rebuild via toLocaleString() — that
+ * round-trips a wall-clock string through the server's local timezone and can
+ * shift the instant by an hour (e.g. 10:00 Lagos stored as 11:00 Lagos).
+ */
 function nowLagos(): Date {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: LAGOS_TZ }))
+  return new Date()
 }
 
 /** Lagos calendar date (YYYY-MM-DD) for a given moment (defaults to now). */
@@ -22,6 +28,14 @@ function lagosDate(d: Date = nowLagos()): string {
     month: '2-digit',
     day: '2-digit',
   }).format(d)
+}
+
+/** Lagos day of week (1=Monday ... 7=Sunday) for a given moment (defaults to now).
+ * Derived from the Lagos calendar date so the weekday reflects Africa/Lagos,
+ * not the server's local/UTC calendar day. */
+function lagosDayOfWeek(d: Date = nowLagos()): number {
+  const [y, m, day] = lagosDate(d).split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, day, 12)).getDay() || 7
 }
 
 function json(data: unknown, status = 200) {
@@ -48,6 +62,7 @@ serve(async (req) => {
 
     const { data: { user }, error: userError } = await sb.auth.getUser()
     if (userError || !user) {
+      console.log('[attendance] auth failed', { userError: userError?.message, hasUser: !!user })
       return json({ error: 'Unauthorized' }, 401)
     }
 
@@ -57,6 +72,7 @@ serve(async (req) => {
       .eq('id', user.id)
       .single()
     if (!profile?.organisation_id) {
+      console.log('[attendance] profile not found', { userId: user.id })
       return json({ error: 'Profile not found' }, 400)
     }
 
@@ -93,7 +109,7 @@ serve(async (req) => {
       const todayRecord = Array.isArray(recordRes.data) ? recordRes.data[0] : recordRes.data
 
       const now = nowLagos()
-      const dayOfWeek = now.getDay() || 7
+      const dayOfWeek = lagosDayOfWeek(now)
       const isWorkday = policy?.working_days?.includes(dayOfWeek) ?? false
 
       // The check-in / sign-out window is open ONLY when the admin has
@@ -136,6 +152,7 @@ serve(async (req) => {
         .eq('date', workDate)
         .maybeSingle()
       if (calendar && !calendar.is_workday) {
+        console.log('[attendance-check] holiday rejected', { workDate, label: calendar.label })
         return json({ error: `${workDate} is a holiday: ${calendar.label}` }, 400)
       }
 
@@ -146,11 +163,13 @@ serve(async (req) => {
         .eq('organisation_id', orgId)
         .single()
       if (!policy) {
+        console.log('[attendance-check] policy missing', { orgId })
         return json({ error: 'Attendance policy not configured for this organisation' }, 400)
       }
 
-      const dayOfWeek = nowLagos().getDay() || 7
+      const dayOfWeek = lagosDayOfWeek()
       if (!policy.working_days.includes(dayOfWeek)) {
+        console.log('[attendance-check] not a workday', { workDate, dayOfWeek, workingDays: policy.working_days })
         return json({ error: `${workDate} is not a working day` }, 400)
       }
 
@@ -163,6 +182,7 @@ serve(async (req) => {
         .eq('work_date', workDate)
         .maybeSingle()
       if (!session || (!session.morning_open_override && !session.morning_opened_at)) {
+        console.log('[attendance-check] window closed', { orgId, workDate, session })
         return json({ error: 'Check-in window not yet opened for today' }, 400)
       }
 
@@ -175,6 +195,7 @@ serve(async (req) => {
         .eq('attendance_date', workDate)
         .maybeSingle()
       if (existing) {
+        console.log('[attendance-check] duplicate check-in', { orgId, staffId: user.id, workDate, existing })
         return json({
           error: 'Already checked in today',
           attendance_id: existing.id,
@@ -184,6 +205,7 @@ serve(async (req) => {
       }
 
       const checkInAt = nowLagos().toISOString()
+      console.log('[attendance-check] inserting record', { orgId, staffId: user.id, workDate, checkInAt, attendanceType })
       const { data: attendance, error: attError } = await sb
         .from('attendance')
         .insert([{
@@ -200,8 +222,12 @@ serve(async (req) => {
         }])
         .select().single()
 
-      if (attError) throw attError
+      if (attError) {
+        console.log('[attendance-check] insert failed', { orgId, staffId: user.id, workDate, error: attError })
+        throw attError
+      }
 
+      console.log('[attendance-check] check-in success', { orgId, staffId: user.id, workDate, attendanceId: attendance?.id })
       return json({ success: true, attendance, is_late: false })
     }
 
@@ -222,9 +248,11 @@ serve(async (req) => {
         .eq('attendance_date', workDate)
         .maybeSingle()
       if (!record || !record.check_in_at) {
+        console.log('[attendance-signout] no check-in record', { orgId, staffId: user.id, workDate })
         return json({ error: 'No check-in record for today' }, 400)
       }
       if (record.check_out_at) {
+        console.log('[attendance-signout] already checked out', { orgId, staffId: user.id, workDate, recordId: record.id })
         return json({ error: 'Already checked out today' }, 400)
       }
 
@@ -236,10 +264,12 @@ serve(async (req) => {
         .eq('work_date', workDate)
         .maybeSingle()
       if (!session || (!session.sign_out_open_override && !session.sign_out_opened_at)) {
+        console.log('[attendance-signout] window closed', { orgId, workDate, session })
         return json({ error: 'Sign-out window is not open yet' }, 400)
       }
 
       const checkOutAt = nowLagos().toISOString()
+      console.log('[attendance-signout] updating record', { orgId, staffId: user.id, workDate, recordId: record.id, checkOutAt })
       const { data: attendance, error: attError } = await sb
         .from('attendance')
         .update({
@@ -250,8 +280,12 @@ serve(async (req) => {
         .eq('id', record.id)
         .select().single()
 
-      if (attError) throw attError
+      if (attError) {
+        console.log('[attendance-signout] update failed', { orgId, staffId: user.id, workDate, recordId: record.id, error: attError })
+        throw attError
+      }
 
+      console.log('[attendance-signout] sign-out success', { orgId, staffId: user.id, workDate, attendanceId: attendance?.id })
       return json({ success: true, attendance })
     }
 
@@ -315,6 +349,7 @@ serve(async (req) => {
 
     return json({ error: 'Unknown action' }, 400)
   } catch (err: any) {
+    console.log('[attendance] unhandled error', { action, userId: user?.id, orgId, error: err.message, stack: err.stack })
     return json({ error: err.message || 'Internal error' }, 500)
   }
 })
