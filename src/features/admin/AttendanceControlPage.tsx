@@ -189,13 +189,15 @@ export default function AttendanceControlPage() {
                 <tr><td colSpan={4} className="py-12 text-center text-neutral-500">No attendance records for today yet.</td></tr>
               ) : (
                 todayRecords.map((r) => {
-                  const profile = (r as any).profiles
+                  const profiles = (r as any).profiles
+                  const profile = Array.isArray(profiles) ? profiles[0] : profiles
+                  const fullName = profile?.full_name || '—'
                   const role = (profile?.role ?? 'staff') as Role
                   const checkedIn = !!r.check_in_at
                   const checkedOut = !!r.check_out_at
                   return (
                     <tr key={r.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition-all">
-                      <td className="py-4 pl-4 text-neutral-900 font-medium">{profile?.full_name}</td>
+                      <td className="py-4 pl-4 text-neutral-900 font-medium">{fullName}</td>
                       <td className="py-4">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${
                           role === 'admin' ? 'bg-blue-50 text-blue-700 border-blue-100' :
