@@ -79,9 +79,11 @@ export default function KnowledgeBasePage() {
     load()
   }
 
-  const addSource = async (data: KnowledgeSourceFormData) => {
-    // When editing an existing source, delegate to the update path.
-    if (editingId) {
+  const addSource = async (data: KnowledgeSourceFormData, isEdit: boolean) => {
+    // Edit path only when explicitly in edit mode AND we have a source id.
+    // A creation flow always inserts (POST): a stale `editingId` can never
+    // route a new source into the PATCH/update path.
+    if (isEdit && editingId) {
       await updateSource(editingId, data)
       return
     }
@@ -497,7 +499,7 @@ export default function KnowledgeBasePage() {
           <button className="btn-ghost" onClick={createCollection} title="New collection">
             <Plus className="w-4 h-4" />
           </button>
-          <button className="btn-primary" onClick={() => { setEditingId(null); setOpenIngest(true); }} disabled={ingesting}>
+          <button className="btn-primary" onClick={() => { setEditingId(null); form.reset(); setOpenIngest(true); }} disabled={ingesting}>
             {ingesting ? 'Processing…' : (
               <>
                 <Plus className="w-4 h-4 mr-2" /> Add source
@@ -586,13 +588,13 @@ export default function KnowledgeBasePage() {
       {/* Ingestion modal */}
       {openIngest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpenIngest(false)} />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { setEditingId(null); setOpenIngest(false); }} />
           <div className="relative z-10 bg-white rounded-lg p-6 max-w-lg w-full mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-neutral-900">{editingId ? 'Edit knowledge source' : 'Add knowledge source'}</h3>
               <button onClick={() => setOpenIngest(false)} className="p-1 text-neutral-400 hover:text-neutral-600">✕</button>
             </div>
-            <form onSubmit={form.handleSubmit(addSource)} className="space-y-4">
+            <form onSubmit={form.handleSubmit((data) => addSource(data, !!editingId))} className="space-y-4">
               <div>
                 <label className="label block mb-1">Source type</label>
                 <select className="input" {...form.register('sourceType')}>
@@ -696,9 +698,9 @@ export default function KnowledgeBasePage() {
                 )}
               </div>
               <div className="flex justify-end gap-2 pt-4">
-                <button type="button" className="btn-ghost text-xs" onClick={() => setOpenIngest(false)}>Cancel</button>
+                <button type="button" className="btn-ghost text-xs" onClick={() => { setEditingId(null); setOpenIngest(false); }}>Cancel</button>
                 <button type="submit" className="btn-primary text-xs" disabled={ingesting || (sourceType === 'file' && !file)}>
-                  {ingesting ? 'Processing…' : 'Create source'}
+                  {ingesting ? 'Processing…' : (editingId ? 'Save changes' : 'Create source')}
                 </button>
               </div>
             </form>
