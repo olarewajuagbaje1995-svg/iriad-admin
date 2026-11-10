@@ -463,6 +463,18 @@ serve(async (req) => {
   const { callerId, callerOrgId } = caller;
 
   try {
+    // Strict env var checks — fail fast with a clear error if the function is
+    // misconfigured, instead of crashing with an obscure 502.
+    const missing: string[] = [];
+    if (!Deno.env.get("SUPABASE_URL")) missing.push("SUPABASE_URL");
+    if (!Deno.env.get("SUPABASE_ANON_KEY")) missing.push("SUPABASE_ANON_KEY");
+    if (!Deno.env.get("NVIDIA_API_KEY") && !Deno.env.get("GROQ_API_KEY")) {
+      missing.push("NVIDIA_API_KEY or GROQ_API_KEY");
+    }
+    if (missing.length) {
+      throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+    }
+
     const body = await req.json();
     const { query, conversation_id, profile_id } = body;
 
