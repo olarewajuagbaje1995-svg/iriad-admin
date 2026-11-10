@@ -511,7 +511,7 @@ export default function KnowledgeBasePage() {
           <button className="btn-ghost" onClick={createCollection} title="New collection">
             <Plus className="w-4 h-4" />
           </button>
-          <button className="btn-primary" onClick={() => setOpenIngest(true)} disabled={ingesting}>
+          <button className="btn-primary" onClick={() => { setEditingId(null); setOpenIngest(true); }} disabled={ingesting}>
             {ingesting ? 'Processing…' : (
               <>
                 <Plus className="w-4 h-4 mr-2" /> Add source
