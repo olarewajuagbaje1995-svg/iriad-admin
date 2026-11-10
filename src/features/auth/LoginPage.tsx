@@ -31,7 +31,7 @@ export default function LoginPage() {
       });
 
       if (error) throw error;
-      window.location.href = "/dashboard";
+      window.location.href = "/app/dashboard";
     } catch (err) {
       setError(
         err instanceof Error

@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import AppLayout from '@/components/layout/AppLayout'
 import ProtectedRoute from '@/routes/ProtectedRoute'
 import { useAuth } from '@/hooks/useAuth'
@@ -50,6 +50,7 @@ function RoleDashboard() {
 export const router = createBrowserRouter([
   { path: '/', element: <LoginPage /> },
   { path: '/login', element: <LoginPage /> },
+  { path: '/dashboard', element: <Navigate to="/app/dashboard" replace /> },
   {
     path: '/app',
     element: (
