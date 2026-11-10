@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Menu, LogOut, Bell, Briefcase, Calendar, LayoutDashboard, Clock,
   CheckSquare, FileText, MessageCircle, File, Users, CheckCircle2,
-  Settings, BarChart, User, Megaphone,
+  Settings, User, Megaphone,
 } from 'lucide-react'
 import { brand, NAVIGATION, type Role } from '@/config/brand'
 import { formatLagos } from '@/lib/dates'
@@ -41,8 +41,6 @@ const ICONS: Record<string, JSX.Element> = {
   'Approval Centre': <CheckCircle2 className="w-4 h-4" />,
   'My Profile': <User className="w-4 h-4" />,
   'Account Settings': <Settings className="w-4 h-4" />,
-  Analytics: <BarChart className="w-4 h-4" />,
-  'Audit Logs': <FileText className="w-4 h-4" />,
   'System Settings': <Settings className="w-4 h-4" />,
 }
 
@@ -75,8 +73,6 @@ const NAV_PATHS: Record<string, string | null> = {
   'Approval Centre': '/app/approval-centre',
   'My Profile': null,
   'Account Settings': '/app/account-settings',
-  Analytics: '/app/analytics',
-  'Audit Logs': '/app/audit-logs',
   'System Settings': '/app/system-settings',
 }
 
