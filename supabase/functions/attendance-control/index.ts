@@ -95,16 +95,13 @@ serve(async (req) => {
       const now = nowLagos()
       const dayOfWeek = now.getDay() || 7
       const isWorkday = policy?.working_days?.includes(dayOfWeek) ?? false
-      const [openH, openM] = (policy?.morning_open_time ?? '08:00').split(':').map(Number)
-      const [closeH, closeM] = (policy?.morning_close_time ?? '09:00').split(':').map(Number)
-      const grace = policy?.grace_period_minutes ?? 0
-      const checkInMinutes = now.getHours() * 60 + now.getMinutes()
-      const openMinutes = openH * 60 + openM
-      const closeMinutes = closeH * 60 + closeM + grace
-      const checkInWindowOpen =
+
+      // The check-in / sign-out window is open ONLY when the admin has
+      // explicitly toggled it open in attendance_sessions. No time-of-day
+      // (e.g. 08:00–09:00) restriction is enforced server-side anymore.
+      const checkInWindowOpen = !!(
         session?.morning_open_override || session?.morning_opened_at
-          ? checkInMinutes >= openMinutes && checkInMinutes <= closeMinutes
-          : false
+      )
 
       return json({
         work_date: workDate,
@@ -121,12 +118,11 @@ serve(async (req) => {
     }
 
     // ------------------------------------------------------------------
-    // CHECK IN — staff only, server-enforced window + no duplicates
+    // CHECK IN — staff and admin/director, server-enforced window + no duplicates
     // ------------------------------------------------------------------
     if (action === 'check_in') {
-      if (isAdmin) {
-        return json({ error: 'Admins cannot check in' }, 403)
-      }
+      // Admin/director are permitted to check in exactly like staff when the
+      // check-in window is open. The former isAdmin 403 block is removed.
 
       const workDate: string = (body.work_date ?? lagosDate()) as string
       const attendanceType: string = String(body.attendance_type ?? 'office')
@@ -158,7 +154,8 @@ serve(async (req) => {
         return json({ error: `${workDate} is not a working day` }, 400)
       }
 
-      // Attendance session must be opened for today (admin-controlled)
+      // Attendance session must be opened for today (admin-controlled).
+      // This is the SOLE gate for the check-in window — no time-of-day check.
       const { data: session } = await sb
         .from('attendance_sessions')
         .select('morning_opened_at, morning_open_override')
@@ -168,25 +165,6 @@ serve(async (req) => {
       if (!session || (!session.morning_open_override && !session.morning_opened_at)) {
         return json({ error: 'Check-in window not yet opened for today' }, 400)
       }
-
-      // Time window enforcement (Africa/Lagos)
-      const now = nowLagos()
-      const [openH, openM] = policy.morning_open_time.split(':').map(Number)
-      const [closeH, closeM] = policy.morning_close_time.split(':').map(Number)
-      const grace = policy.grace_period_minutes ?? 0
-      const checkInMinutes = now.getHours() * 60 + now.getMinutes()
-      const openMinutes = openH * 60 + openM
-      const closeMinutes = closeH * 60 + closeM + grace
-
-      if (checkInMinutes < openMinutes) {
-        return json({ error: `Check-in opens at ${policy.morning_open_time}` }, 400)
-      }
-      if (checkInMinutes > closeMinutes) {
-        return json({ error: `Check-in window closed at ${policy.morning_close_time}` }, 400)
-      }
-
-      const threshold = policy.on_time_threshold_minutes ?? 0
-      const isLate = checkInMinutes > openMinutes + threshold
 
       // Prevent duplicate check-in for staff/date
       const { data: existing } = await sb
@@ -215,8 +193,8 @@ serve(async (req) => {
           check_in_at: checkInAt,
           attendance_type: attendanceType,
           check_in_note: checkInNote,
-          status: isLate ? 'late' : 'checked_in',
-          is_late: isLate,
+          status: 'checked_in',
+          is_late: false,
           created_at: checkInAt,
           updated_at: checkInAt,
         }])
@@ -224,16 +202,15 @@ serve(async (req) => {
 
       if (attError) throw attError
 
-      return json({ success: true, attendance, is_late })
+      return json({ success: true, attendance, is_late: false })
     }
 
     // ------------------------------------------------------------------
-    // SIGN OUT — staff only, must be checked in today, window open
+    // SIGN OUT — staff and admin/director, must be checked in today, window open
     // ------------------------------------------------------------------
     if (action === 'sign_out') {
-      if (isAdmin) {
-        return json({ error: 'Admins cannot sign out' }, 403)
-      }
+      // Admin/director are permitted to sign out exactly like staff when the
+      // sign-out window is open. The former isAdmin 403 block is removed.
 
       const workDate: string = (body.work_date ?? lagosDate()) as string
 

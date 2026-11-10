@@ -25,7 +25,7 @@ export default function AttendancePage() {
       <div>
         <h2 className="text-2xl font-semibold text-neutral-900">Attendance</h2>
         <p className="text-sm text-neutral-500">
-          Morning check-in window: 8:00 AM – 9:00 AM Africa/Lagos (Mon–Fri). Evening sign-out is admin-controlled.
+          Check-in is only permitted while the admin has opened the check-in window (Africa/Lagos). Evening sign-out is admin-controlled.
         </p>
       </div>
 
