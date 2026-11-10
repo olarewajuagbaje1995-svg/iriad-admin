@@ -189,10 +189,8 @@ export default function AttendanceControlPage() {
                 <tr><td colSpan={4} className="py-12 text-center text-neutral-500">No attendance records for today yet.</td></tr>
               ) : (
                 todayRecords.map((r) => {
-                  const profiles = (r as any).profiles
-                  const profile = Array.isArray(profiles) ? profiles[0] : profiles
-                  const fullName = profile?.full_name || '—'
-                  const role = (profile?.role ?? 'staff') as Role
+                  const fullName = r.full_name || '—'
+                  const role = (r.role ?? 'staff') as Role
                   const checkedIn = !!r.check_in_at
                   const checkedOut = !!r.check_out_at
                   return (

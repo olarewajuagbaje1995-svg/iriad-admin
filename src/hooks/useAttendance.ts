@@ -16,7 +16,7 @@ export function useAttendance() {
     try {
       const { data } = await supabase
         .from('attendance')
-        .select('*, profiles(full_name, role)')
+        .select('*')
         .order('attendance_date', { ascending: false })
         .limit(50)
       setRecords(data ?? [])
@@ -50,7 +50,7 @@ export function useAttendance() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, organisation_id')
+        .select('id, organisation_id, full_name, role')
         .eq('id', user.id)
         .single()
       if (!profile?.organisation_id) {
@@ -82,6 +82,8 @@ export function useAttendance() {
           is_late: false,
           created_at: checkInAt,
           updated_at: checkInAt,
+          full_name: profile.full_name,
+          role: profile.role,
         }])
         .select()
         .single()
