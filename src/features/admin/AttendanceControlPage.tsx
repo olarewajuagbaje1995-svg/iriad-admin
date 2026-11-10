@@ -52,14 +52,30 @@ export default function AttendanceControlPage() {
     try {
       const today = new Date().toISOString().slice(0, 10)
       const open = kind === 'morning' ? !morningOpen : !signOutOpen
-      const { error: fnError } = await supabase.functions.invoke('attendance-control', {
-        body: {
-          action: kind === 'morning' ? 'toggle_morning' : 'toggle_sign_out',
+      const nowISO = new Date().toISOString()
+      const orgId = profile?.organisation_id
+      if (!orgId) {
+        alert('Profile not found')
+        return
+      }
+      const updates: Record<string, any> = { updated_at: nowISO }
+      if (kind === 'morning') {
+        updates.morning_open_override = open
+        updates.morning_opened_at = open ? nowISO : null
+        updates.morning_closed_at = open ? null : nowISO
+      } else {
+        updates.sign_out_open_override = open
+        updates.sign_out_opened_at = open ? nowISO : null
+        updates.sign_out_closed_at = open ? null : nowISO
+      }
+      const { error: dbError } = await supabase
+        .from('attendance_sessions')
+        .upsert({
+          organisation_id: orgId,
           work_date: today,
-          open,
-        },
-      })
-      if (fnError) throw fnError
+          ...updates,
+        }, { onConflict: 'organisation_id,work_date' })
+      if (dbError) throw dbError
       if (kind === 'morning') setMorningOpen(open)
       else setSignOutOpen(open)
       load()

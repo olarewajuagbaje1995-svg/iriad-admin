@@ -31,7 +31,8 @@ export function useAttendance() {
 
   useEffect(() => { load() }, [load])
 
-  /** Check in via the attendance-control Edge Function (server-enforced window, service-role insert). */
+  /** Check in via direct client-side insert. Respects the open/closed
+   *  check-in window retrieved from attendance_sessions. */
   const checkIn = async (type: Attendance['attendance_type'] = 'office') => {
     const today = lagosToday()
     if (todayRecord) {
@@ -40,24 +41,64 @@ export function useAttendance() {
     }
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('attendance-control', {
-        body: { action: 'check_in', attendance_type: type, work_date: today },
-      })
-      if (fnError) throw fnError
-      if (data?.error) {
-        setError(data.error)
+      // Resolve the acting user's profile for organisation_id + staff_id.
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        setError('Unauthorized')
         return null
       }
-      setTodayRecord(data.attendance)
-      setRecords([data.attendance, ...records])
-      return data.attendance
-    } catch (fnErr: any) {
-      setError(fnErr.message || 'Check-in failed')
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, organisation_id')
+        .eq('id', user.id)
+        .single()
+      if (!profile?.organisation_id) {
+        setError('Profile not found')
+        return null
+      }
+
+      // Check-in window must be open (admin-controlled via attendance_sessions).
+      const { data: session } = await supabase
+        .from('attendance_sessions')
+        .select('morning_open_override, morning_opened_at')
+        .eq('work_date', today)
+        .maybeSingle()
+      if (!session || (!session.morning_open_override && !session.morning_opened_at)) {
+        setError('Check-in window not yet opened for today')
+        return null
+      }
+
+      const checkInAt = new Date().toISOString()
+      const { data: attendance, error: attError } = await supabase
+        .from('attendance')
+        .insert([{
+          organisation_id: profile.organisation_id,
+          staff_id: user.id,
+          attendance_date: today,
+          check_in_at: checkInAt,
+          attendance_type: type,
+          status: 'checked_in',
+          is_late: false,
+          created_at: checkInAt,
+          updated_at: checkInAt,
+        }])
+        .select()
+        .single()
+
+      if (attError) throw attError
+
+      setTodayRecord(attendance)
+      setRecords([attendance, ...records])
+      return attendance
+    } catch (err: any) {
+      setError(err.message || 'Check-in failed')
       return null
     }
   }
 
-  /** Sign out via the attendance-control Edge Function (server-enforced window, service-role update). */
+  /** Sign out via direct client-side update. Respects the open/closed
+   *  sign-out window retrieved from attendance_sessions. */
   const checkOut = async () => {
     if (!todayRecord) {
       setError('No check-in record for today')
@@ -65,36 +106,76 @@ export function useAttendance() {
     }
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('attendance-control', {
-        body: { action: 'sign_out', work_date: todayRecord.attendance_date },
-      })
-      if (fnError) throw fnError
-      if (data?.error) {
-        setError(data.error)
+      const today = lagosToday()
+      const { data: session } = await supabase
+        .from('attendance_sessions')
+        .select('sign_out_open_override, sign_out_opened_at')
+        .eq('work_date', today)
+        .maybeSingle()
+      if (!session || (!session.sign_out_open_override && !session.sign_out_opened_at)) {
+        setError('Sign-out window is not open yet')
         return null
       }
-      setTodayRecord(data.attendance)
-      return data.attendance
-    } catch (fnErr: any) {
-      setError(fnErr.message || 'Sign-out failed')
+
+      const checkOutAt = new Date().toISOString()
+      const { data: attendance, error: attError } = await supabase
+        .from('attendance')
+        .update({
+          check_out_at: checkOutAt,
+          status: 'checked_out',
+          updated_at: checkOutAt,
+        })
+        .eq('id', todayRecord.id)
+        .select()
+        .single()
+
+      if (attError) throw attError
+
+      setTodayRecord(attendance)
+      return attendance
+    } catch (err: any) {
+      setError(err.message || 'Sign-out failed')
       return null
     }
   }
 
-  /** Fetch today's record + window state from the Edge Function. */
+  /** Fetch today's record + window state via direct client-side queries. */
   const getStatus = async (work_date?: string) => {
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('attendance-control', {
-        body: { action: 'get_status', work_date },
-      })
-      if (fnError) throw fnError
-      if (data?.error) {
-        setError(data.error)
-        return null
+      const today = work_date ?? lagosToday()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return null
+
+      const [sessionRes, recordRes] = await Promise.all([
+        supabase
+          .from('attendance_sessions')
+          .select('morning_open_override, morning_opened_at, sign_out_open_override, sign_out_opened_at')
+          .eq('work_date', today)
+          .maybeSingle(),
+        supabase
+          .from('attendance')
+          .select('*')
+          .eq('staff_id', user.id)
+          .eq('attendance_date', today)
+          .maybeSingle(),
+      ])
+
+      const session = sessionRes.data
+      const todayRecord = recordRes.data
+
+      return {
+        work_date: today,
+        check_in_window_open: !!(
+          session?.morning_open_override || session?.morning_opened_at
+        ),
+        sign_out_window_open: !!(
+          session?.sign_out_open_override || session?.sign_out_opened_at
+        ),
+        today_record: todayRecord ?? null,
+        session,
       }
-      return data
-    } catch (fnErr: any) {
-      setError(fnErr.message || 'Failed to load status')
+    } catch (err: any) {
+      setError(err.message || 'Failed to load status')
       return null
     }
   }
