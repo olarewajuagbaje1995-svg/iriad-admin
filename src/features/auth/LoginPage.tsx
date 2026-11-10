@@ -1,112 +1,198 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '@/hooks/useAuth'
-import { ShieldCheck, Lock } from 'lucide-react'
-import { PasswordInput } from '@/components/ui/PasswordInput'
+import { useState } from "react";
+import { supabase } from "../../lib/supabase";
+import {
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  Mail,
+  ArrowRight,
+  ShieldCheck,
+} from "lucide-react";
+import "./LoginPage.css";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const { demoMode, signIn } = useAuth()
-  const navigate = useNavigate()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    const { error: err } = await signIn(email, password)
-    setLoading(false)
-    if (err) {
-      setError(err)
-      return
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setLoading(true);
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) throw error;
+      window.location.href = "/dashboard";
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to sign in. Please check your details."
+      );
+    } finally {
+      setLoading(false);
     }
-    navigate('/app/dashboard', { replace: true })
-  }
+  };
+
+  const handleForgotPassword = async () => {
+    setError("");
+    setSuccess("");
+
+    if (!email.trim()) {
+      setError("Enter your email address first.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim(),
+        {
+          redirectTo: `${window.location.origin}/reset-password`,
+        }
+      );
+
+      if (error) throw error;
+
+      setSuccess("Password reset instructions have been sent to your email.");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to send reset email."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
-      <div className="w-full max-w-md">
-        <div className="flex flex-col items-center gap-3 mb-8">
-          <img src="/brand/iriad-logo.jpg" alt="IRIAD" className="h-12" />
-          <div className="text-center">
-            <h1 className="text-2xl font-semibold text-neutral-900">{'IRIAD Operations Portal'}</h1>
-            <p className="text-sm text-neutral-500">Staff sign-in</p>
+    <main className="login-page">
+      <section className="login-brand-panel">
+        <div className="brand-content">
+          <div className="brand-logo">
+            <div className="brand-mark">IRIAD</div>
+            <span>INTERNAL OPERATIONS PORTAL</span>
+          </div>
+
+          <div className="brand-message">
+            <span className="brand-eyebrow">KNOWLEDGE. INCLUSION. IMPACT.</span>
+            <h1>
+              Better systems.
+              <br />
+              Greater impact.
+            </h1>
+            <p>
+              A central workspace for IRIAD staff to collaborate,
+              manage projects, share updates and coordinate
+              organisational activities.
+            </p>
+          </div>
+
+          <div className="brand-footer">
+            <span>Initiative for Research, Innovation and Advocacy in Development</span>
+            <span>© {new Date().getFullYear()} IRIAD</span>
           </div>
         </div>
+      </section>
 
-        <div className="card p-6 space-y-4">
-          {demoMode && (
-            <div className="rounded-md bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
-              Demo mode active — signing in without Supabase. Email and password only.
+      <section className="login-form-panel">
+        <div className="login-form-container">
+          <div className="mobile-brand">
+            <div className="brand-mark">IRIAD</div>
+            <span>INTERNAL OPERATIONS PORTAL</span>
+          </div>
+
+          <div className="login-heading">
+            <div className="welcome-icon">
+              <LockKeyhole size={23} />
             </div>
-          )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="label">Email</label>
+            <span className="login-overline">STAFF ACCESS</span>
+            <h2>Welcome back</h2>
+            <p>Sign in to access your IRIAD workspace.</p>
+          </div>
+
+          <form onSubmit={handleLogin}>
+            <label htmlFor="email">Work email address</label>
+            <div className="login-input">
+              <Mail size={19} />
               <input
-                className="input"
+                id="email"
                 type="email"
+                placeholder="name@iriadng.org"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
                 required
               />
             </div>
-            <div>
-              <label className="label">Password</label>
-              <PasswordInput
+
+            <div className="password-label">
+              <label htmlFor="password">Password</label>
+              <button
+                type="button"
+                className="forgot-link"
+                onClick={handleForgotPassword}
+                disabled={loading}
+              >
+                Forgot password?
+              </button>
+            </div>
+
+            <div className="login-input">
+              <LockKeyhole size={19} />
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
                 value={password}
-                onChange={(value) => setPassword(value)}
-                required
+                onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
+                required
               />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+              </button>
             </div>
-            {error && (
-              <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
-            )}
-            <button className="btn-primary w-full" disabled={loading}>
-              {loading ? 'Signing in...' : 'Sign in'}
+
+            {error && <div className="login-error">{error}</div>}
+            {success && <div className="login-success">{success}</div>}
+
+            <button
+              type="submit"
+              className="login-submit"
+              disabled={loading}
+            >
+              {loading ? "Please wait..." : "Sign in to workspace"}
+              {!loading && <ArrowRight size={19} />}
             </button>
           </form>
 
-          <div className="border-t border-neutral-200 pt-5 flex items-center gap-2">
-            <span className="text-xs text-neutral-500 flex-1"></span>
-            <div className="text-xs text-neutral-500 flex items-center gap-2">
-              <Lock className="w-3 h-3" /> {demoMode ? 'Demo auth (localStorage)' : 'Supabase Auth'}
-            </div>
-            <span className="text-xs text-neutral-500 flex-1"></span>
+          <div className="login-security">
+            <ShieldCheck size={18} />
+            <span>Secure access for authorised IRIAD personnel only.</span>
           </div>
 
-          <details className="text-left space-y-1">
-            <summary className="text-xs text-neutral-400 underline cursor-pointer">
-              Demo accounts (email / password)
-            </summary>
-            <ul className="text-xs text-neutral-500 pl-4 space-y-1">
-              <li>
-                <span className="font-medium">admin@iriad.example</span> / admin123 (Admin)
-              </li>
-              <li>
-                <span className="font-medium">director@iriad.example</span> / director123 (Director)
-              </li>
-              <li>
-                <span className="font-medium">staff@iriad.example</span> / staff123 (Staff)
-              </li>
-            </ul>
-          </details>
-
-          {!demoMode && (
-            <p className="text-center text-xs text-neutral-500">
-              Need access? Contact your organisation administrator.
-            </p>
-          )}
+          <div className="login-bottom">
+            <span>Need access?</span>
+            <p>Contact your IRIAD system administrator.</p>
+          </div>
         </div>
-
-        <div className="mt-6 flex items-center gap-2 text-sm text-neutral-600">
-          <ShieldCheck className="w-4 h-4" /> RLScan &nbsp;|&nbsp; Supabase Auth
-        </div>
-      </div>
-    </div>
-  )
+      </section>
+    </main>
+  );
 }

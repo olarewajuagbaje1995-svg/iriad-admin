@@ -1,0 +1,386 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+
+.dashboard-content {
+  font-family: 'DM Sans', sans-serif;
+  color: #142d43;
+  padding: 0 20px 40px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.welcome-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.welcome-date {
+  color: #168a7d;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+.welcome-section h1 {
+  font-family: 'Manrope', sans-serif;
+  font-size: 28px;
+  font-weight: 800;
+  color: #142d43;
+  margin: 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .stats-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.stat-card {
+  background: #fff;
+  border: 1px solid #e9edf2;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.stat-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.stat-top span {
+  font-size: 10px;
+  font-weight: 800;
+  color: #9aa5b2;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+
+.stat-icon.teal { background: #e7f3f0; color: #197a78; }
+.stat-icon.blue { background: #eaf1fa; color: #5484bf; }
+.stat-icon.purple { background: #f0ecf8; color: #8868b5; }
+.stat-icon.orange { background: #fff2e5; color: #c88b3e; }
+
+.stat-card h2 {
+  font-size: 32px;
+  font-weight: 800;
+  color: #142d43;
+  margin: 0 0 8px;
+  line-height: 1;
+}
+
+.stat-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #9aa5b2;
+}
+
+.stat-indicator {
+  font-weight: 700;
+  color: #168a7d;
+}
+
+.dashboard-middle,
+.dashboard-bottom {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-middle,
+  .dashboard-bottom {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e9edf2;
+  border-radius: 16px;
+}
+
+.panel-heading {
+  margin-bottom: 20px;
+}
+
+.panel-heading h3 {
+  font-size: 14px;
+  font-weight: 800;
+  color: #142d43;
+  margin: 0;
+}
+
+.panel-heading p {
+  font-size: 11px;
+  color: #9aa5b2;
+  margin: 4px 0 0;
+}
+
+.project-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: #f7f9fa;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.summary-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #168a7d;
+  background: #e7f3f0;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.project-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.project-info strong {
+  font-weight: 800;
+  color: #142d43;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.project-info small {
+  color: #9aa5b2;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.project-progress {
+  height: 6px;
+  background: #e9edf2;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.project-progress > div {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 3px;
+}
+
+.attendance-panel,
+.activity-panel,
+.events-panel {
+  padding: 24px;
+}
+
+.attendance-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px;
+  background: #f7f9fa;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.attendance-summary strong {
+  display: block;
+  font-size: 24px;
+  font-weight: 800;
+  color: #142d43;
+}
+
+.attendance-summary span {
+  font-size: 10px;
+  color: #9aa5b2;
+  font-weight: 500;
+}
+
+.attendance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.attendance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #e9edf2;
+}
+
+.person-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #eaf1fa;
+  color: #3b82f6;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.person-details strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #142d43;
+}
+
+.person-details small {
+  font-size: 9px;
+  color: #9aa5b2;
+  text-transform: capitalize;
+}
+
+.attendance-time {
+  text-align: right;
+  font-size: 10px;
+  color: #142d43;
+  font-weight: 700;
+}
+
+.activity-list,
+.events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.activity-item,
+.event-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #f7f9fa;
+  border-radius: 10px;
+  border: 1px solid #e9edf2;
+}
+
+.activity-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #eaf1fa;
+  color: #3b82f6;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.activity-details strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #142d43;
+}
+
+.activity-details small {
+  font-size: 9px;
+  color: #9aa5b2;
+}
+
+.activity-time,
+.event-item > svg {
+  color: #9aa5b2;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.event-date {
+  width: 52px;
+  background: #eaf1fa;
+  color: #3b82f6;
+  padding: 8px 6px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.event-date strong {
+  font-size: 14px;
+  color: #142d43;
+}
+
+.event-info strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #142d43;
+}
+
+.event-info small {
+  font-size: 9px;
+  color: #9aa5b2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.dashboard-footer {
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid #e9edf2;
+  font-size: 10px;
+  color: #9aa5b2;
+  text-align: center;
+}
