@@ -1,603 +1,412 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import { formatLagos, lagosToday, isSameLagosDay } from '@/lib/dates'
-import { useAuth } from '@/hooks/useAuth'
-import { isAdminOrDirector } from '@/lib/permissions'
-import { type Role } from '@/config/brand'
-import {
-  Calendar, Plus, Search, X, ChevronLeft, ChevronRight,
-  Clock, Edit2, Trash2, Filter,
-} from 'lucide-react'
-
-/* ------------------------------------------------------------------ */
-/*  Event categories with colours                                     */
-/* ------------------------------------------------------------------ */
-
-const EVENT_CATEGORIES: { key: string; label: string; color: string }[] = [
-  { key: 'meeting', label: 'Meeting', color: 'bg-blue-500' },
-  { key: 'deadline', label: 'Deadline', color: 'bg-red-500' },
-  { key: 'workshop', label: 'Workshop', color: 'bg-purple-500' },
-  { key: 'training', label: 'Training', color: 'bg-emerald-500' },
-  { key: 'holiday', label: 'Holiday', color: 'bg-amber-500' },
-  { key: 'personal', label: 'Personal', color: 'bg-neutral-400' },
-  { key: 'other', label: 'Other', color: 'bg-brand-600' },
-]
-
-const categoryColor = (key: string) => {
-  const c = EVENT_CATEGORIES.find((x) => x.key === key)
-  return c ? c.color : 'bg-neutral-400'
-}
+import React, { useState, useEffect, useMemo } from 'react';
+import { supabase } from '@/lib/supabase';
+import { Search, Plus, Trash2, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 
 type CalendarEvent = {
-  id: string
-  title: string
-  description?: string | null
-  category?: string | null
-  event_date?: string | null
-  event_time?: string | null
-  start_at?: string | null
-  end_at?: string | null
-  location?: string | null
-  created_by?: string | null
-  created_at?: string | null
-  profiles?: { full_name?: string | null } | null
-}
+  id: string;
+  title: string;
+  event_date: string;
+  event_time: string;
+  category: 'work' | 'personal' | 'meeting' | 'important';
+  is_international?: boolean;
+};
 
-/* ------------------------------------------------------------------ */
-/*  Calendar page                                                     */
-/* ------------------------------------------------------------------ */
+const defaultInternationalEvents: CalendarEvent[] = [
+  { id: 'int-1', title: 'International Day for Tolerance', event_date: '2026-11-16', event_time: '09:00', category: 'important', is_international: true },
+  { id: 'int-2', title: "Universal Children's Day", event_date: '2026-11-20', event_time: '10:00', category: 'meeting', is_international: true },
+  { id: 'int-3', title: 'Elimination of Violence Against Women', event_date: '2026-11-25', event_time: '09:30', category: 'important', is_international: true },
+];
+
+const monthNames = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function CalendarPage() {
-  const { profile } = useAuth()
-  const role = (profile?.role as Role | null) ?? null
-  const canManage = isAdminOrDirector(role)
-  const orgId = profile?.organisation_id ?? null
+  const [currentDate, setCurrentDate] = useState(new Date(2026, 10, 10));
+  const [view, setView] = useState<'Month' | 'Week' | 'Agenda'>('Month');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [showModal, setShowModal] = useState(false);
+  const [dbEvents, setDbEvents] = useState<CalendarEvent[]>([]);
 
-  const [view, setView] = useState<'month' | 'week' | 'agenda'>('month')
-  const [currentDate, setCurrentDate] = useState(new Date())
-  const [events, setEvents] = useState<CalendarEvent[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('all')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editing, setEditing] = useState<CalendarEvent | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-
-  const year = currentDate.getFullYear()
-  const month = currentDate.getMonth()
-  const todayStr = lagosToday()
-
-  /* ---- fetch ---- */
-
-  const loadEvents = useCallback(async () => {
-    if (!orgId) {
-      setEvents([])
-      setLoading(false)
-      return
-    }
-    try {
-      const { data, error } = await supabase
-        .from('calendar_events')
-        .select('*, profiles(full_name)')
-        .eq('organisation_id', orgId)
-        .order('start_at', { ascending: true })
-      if (error) throw error
-      setEvents((data ?? []) as CalendarEvent[])
-    } catch {
-      // table may not exist until migration runs
-    } finally {
-      setLoading(false)
-    }
-  }, [orgId])
+  const [newEvent, setNewEvent] = useState({
+    title: '',
+    event_date: new Date().toISOString().split('T')[0],
+    event_time: '09:00',
+    category: 'work' as CalendarEvent['category']
+  });
 
   useEffect(() => {
-    loadEvents()
-  }, [loadEvents])
+    fetchEvents();
+  }, []);
 
-  /* ---- derived ---- */
+  async function fetchEvents() {
+    const { data, error } = await supabase.from('calendar_events').select('*');
+    if (!error && data) {
+      const formatted = data.map(item => ({
+        id: item.id,
+        title: item.title,
+        event_date: item.event_date || item.date,
+        event_time: item.event_time || item.time || '09:00',
+        category: item.category || 'work'
+      }));
+      setDbEvents(formatted);
+    }
+  }
 
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const firstDayOfMonth = new Date(year, month, 1).getDay() // 0 = Sunday
+  const allEvents = useMemo(() => {
+    return [...defaultInternationalEvents, ...dbEvents];
+  }, [dbEvents]);
 
   const filteredEvents = useMemo(() => {
-    return events.filter((e) => {
-      if (search && !e.title.toLowerCase().includes(search.toLowerCase())) return false
-      if (categoryFilter !== 'all' && e.category !== categoryFilter) return false
-      return true
-    })
-  }, [events, search, categoryFilter])
+    return allEvents.filter(event => {
+      const matchesSearch = event.title.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCat = selectedCategory === 'All' || event.category.toLowerCase() === selectedCategory.toLowerCase();
+      return matchesSearch && matchesCat;
+    });
+  }, [allEvents, searchQuery, selectedCategory]);
 
-  const eventsByDate = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>()
-    for (const e of events) {
-      const key = e.event_date ?? e.start_at?.slice(0, 10)
-      if (!key) continue
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(e)
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+
+  const monthDays = useMemo(() => {
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    const totalDays = new Date(year, month + 1, 0).getDate();
+
+    const daysArray = [];
+    for (let i = 0; i < firstDayIndex; i++) {
+      const prevDate = new Date(year, month, 0 - (firstDayIndex - 1 - i));
+      daysArray.push({ date: prevDate, isCurrentMonth: false });
     }
-    return map
-  }, [events])
-
-  const navigateMonth = (delta: number) => {
-    setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() + delta, 1))
-  }
-
-  const goToday = () => setCurrentDate(new Date())
-
-  const isToday = (d: number) => {
-    if (!d) return false
-    const check = new Date(year, month, d)
-    return isSameLagosDay(check, todayStr)
-  }
-
-  /* ---- create / update / delete ---- */
-
-  const saveEvent = async (values: {
-    title: string
-    description: string
-    category: string
-    eventDate: string
-    eventTime: string
-    endDate: string
-    endTime: string
-    location: string
-  }) => {
-    if (!orgId || !profile) return
-    setSaving(true)
-    try {
-      const startAt = new Date(`${values.eventDate}T${values.eventTime}:00`).toISOString()
-      const endAt = new Date(`${values.endDate}T${values.endTime}:00`).toISOString()
-      const payload = {
-        organisation_id: orgId,
-        title: values.title,
-        description: values.description || null,
-        category: values.category,
-        event_date: values.eventDate,
-        event_time: values.eventTime,
-        start_at: startAt,
-        end_at: endAt,
-        location: values.location || null,
-        created_by: profile.id,
+    for (let i = 1; i <= totalDays; i++) {
+      const currDate = new Date(year, month, i);
+      daysArray.push({ date: currDate, isCurrentMonth: true });
+    }
+    const remaining = 7 - (daysArray.length % 7);
+    if (remaining < 7) {
+      for (let i = 1; i <= remaining; i++) {
+        const nextDate = new Date(year, month + 1, i);
+        daysArray.push({ date: nextDate, isCurrentMonth: false });
       }
-      if (editing) {
-        await supabase.from('calendar_events').update(payload).eq('id', editing.id)
-      } else {
-        await supabase.from('calendar_events').insert(payload)
-      }
-      setModalOpen(false)
-      setEditing(null)
-      await loadEvents()
-    } catch (e: any) {
-      alert(e.message || 'Failed to save event')
-    } finally {
-      setSaving(false)
+    }
+    return daysArray;
+  }, [year, month]);
+
+  const formatDateKey = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  async function handleAddEvent(e: React.FormEvent) {
+    e.preventDefault();
+    const { data: userData } = await supabase.auth.getUser();
+
+    const payload = {
+      title: newEvent.title,
+      event_date: newEvent.event_date,
+      event_time: newEvent.event_time,
+      category: newEvent.category,
+      created_by: userData.user?.id || null
+    };
+
+    const { error } = await supabase.from('calendar_events').insert([payload]);
+
+    if (!error) {
+      setShowModal(false);
+      setNewEvent({ title: '', event_date: new Date().toISOString().split('T')[0], event_time: '09:00', category: 'work' });
+      fetchEvents();
+    } else {
+      alert('Error creating event. Ensure calendar_events table exists in Supabase.');
     }
   }
 
-  const deleteEvent = async (id: string) => {
-    if (!window.confirm('Delete this event?')) return
-    setDeletingId(id)
-    try {
-      await supabase.from('calendar_events').delete().eq('id', id)
-      await loadEvents()
-    } catch (e: any) {
-      alert(e.message || 'Failed to delete event')
-    } finally {
-      setDeletingId(null)
+  async function handleDelete(id: string, isInternational?: boolean) {
+    if (isInternational) {
+      alert('Default international events cannot be deleted.');
+      return;
     }
+    if (!window.confirm('Are you sure you want to delete this event?')) return;
+    await supabase.from('calendar_events').delete().eq('id', id);
+    fetchEvents();
   }
 
-  const openCreate = () => { setEditing(null); setModalOpen(true) }
-  const openEdit = (e: CalendarEvent) => { setEditing(e); setModalOpen(true) }
-
-  /* ---- render helpers ---- */
-
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  const MONTH_NAMES = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-  ]
-
-  const dayEvents = (d: number) => {
-    const key = new Date(year, month, d).toISOString().slice(0, 10)
-    return eventsByDate.get(key) ?? []
-  }
-
-  if (loading) {
-    return (
-      <div className="p-6 flex items-center justify-center">
-        Loading calendar…
-      </div>
-    )
-  }
+  const categoryColors: Record<string, string> = {
+    work: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    personal: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    meeting: 'bg-amber-50 text-amber-700 border-amber-200',
+    important: 'bg-rose-50 text-rose-700 border-rose-200'
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white rounded-xl border border-neutral-100 p-6 shadow-sm">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl border border-neutral-100 shadow-sm">
         <div>
-          <h2 className="text-xl font-semibold text-neutral-900">Organisational Calendar</h2>
-          <p className="text-sm text-neutral-500">
-            {MONTH_NAMES[month]} {year} • {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
+          <h1 className="text-2xl font-bold text-neutral-900">Organisational Calendar</h1>
+          <p className="text-sm text-neutral-500 mt-0.5">
+            {monthNames[month]} {year} · {filteredEvents.length} events scheduled
           </p>
         </div>
-        <div className="flex items-end gap-3">
-          <div className="flex gap-1">
-            {['month', 'week', 'agenda'].map((v) => (
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex bg-neutral-100 p-1 rounded-xl">
+            {(['Month', 'Week', 'Agenda'] as const).map((v) => (
               <button
                 key={v}
-                onClick={() => setView(v as any)}
-                className={`px-3 py-1.5 text-xs rounded border ${
-                  view === v
-                    ? 'bg-brand-100 text-brand-700 border-brand-200'
-                    : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
+                onClick={() => setView(v)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  view === v ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-900'
                 }`}
               >
-                {v === 'month' ? 'Month' : v === 'week' ? 'Week' : 'Agenda'}
+                {v}
               </button>
             ))}
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={goToday}
-              className="px-3 py-1.5 text-xs rounded border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
-            >
-              Today
-            </button>
-            <button
-              onClick={openCreate}
-              disabled={!canManage}
-              className={`px-4 py-1.5 rounded border text-sm font-medium flex items-center gap-1.5 ${
-                canManage
-                  ? 'bg-brand-600 border-brand-600 text-white hover:bg-brand-700 shadow-sm shadow-brand-600/20'
-                  : 'bg-neutral-100 border-neutral-200 text-neutral-400 opacity-60 cursor-not-allowed'
-              }`}
-            >
-              <Plus className="w-3 h-3" /> Add event
-            </button>
-          </div>
-        </div>
-      </div>
 
-      {/* Search & filters (agenda-focused but visible everywhere) */}
-      <div className="card p-4">
-        <div className="flex flex-col lg:flex-row gap-4 items-end">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="Search events…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-            />
-          </div>
-          <div className="relative flex-1 min-w-[200px]">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-            >
-              <option value="all">All categories</option>
-              {EVENT_CATEGORIES.map((c) => (
-                <option key={c.key} value={c.key}>{c.label}</option>
-              ))}
-            </select>
-          </div>
-          {!canManage && (
-            <span className="text-xs text-neutral-500 italic">View only — sign in as admin/director to create events.</span>
-          )}
-        </div>
-      </div>
+          <button
+            onClick={() => setCurrentDate(new Date())}
+            className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-semibold transition-colors"
+          >
+            Today
+          </button>
 
-      {/* Month view */}
-      {view === 'month' && (
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <button onClick={() => navigateMonth(-1)} className="p-2 text-neutral-500 hover:text-neutral-900">
+          <div className="flex items-center bg-neutral-100 rounded-xl overflow-hidden">
+            <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="p-2 hover:bg-neutral-200 text-neutral-600 transition-colors">
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-lg font-semibold text-neutral-900">{MONTH_NAMES[month]} {year}</span>
-            <button onClick={() => navigateMonth(1)} className="ml-2 p-2 text-neutral-500 hover:text-neutral-900">
+            <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="p-2 hover:bg-neutral-200 text-neutral-600 transition-colors">
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="grid grid-cols-7 gap-0.5 mb-2">
-            {weekDays.map((wd) => (
-              <div key={wd} className="text-center text-xs font-medium text-neutral-500 uppercase tracking-wider">
-                {wd}
+
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-sm shadow-indigo-200 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            Add event
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3.5 top-3 text-neutral-400" />
+          <input
+            type="text"
+            placeholder="Search events across all dates..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+          />
+        </div>
+
+        <select
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value)}
+          className="px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs font-medium text-neutral-700 outline-none focus:border-indigo-500"
+        >
+          <option value="All">All Categories</option>
+          <option value="work">Work</option>
+          <option value="meeting">Meeting</option>
+          <option value="important">Important</option>
+          <option value="personal">Personal</option>
+        </select>
+      </div>
+
+      {view === 'Month' && (
+        <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+          <div className="grid grid-cols-7 border-b border-neutral-100 bg-neutral-50/50">
+            {daysOfWeek.map((day) => (
+              <div key={day} className="py-3 text-center text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                {day}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-0.5">
-            {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-              <div key={`empty-${i}`} className="aspect-square" />
-            ))}
-            {Array.from({ length: daysInMonth }, (_, i) => {
-              const d = i + 1
-              const evs = dayEvents(d)
-              const tdy = isToday(d)
+
+          <div className="grid grid-cols-7 auto-rows-fr bg-neutral-100 gap-px">
+            {monthDays.map((item, idx) => {
+              const dateKey = formatDateKey(item.date);
+              const dayEvents = filteredEvents.filter((ev) => ev.event_date === dateKey);
+              const isToday = dateKey === formatDateKey(new Date());
+
               return (
                 <div
-                  key={d}
-                  className={`aspect-square flex flex-col items-center justify-start p-1.5 rounded-lg border cursor-pointer transition-colors ${
-                    tdy
-                      ? 'bg-brand-50 border-brand-200'
-                      : 'bg-white border-neutral-200 hover:bg-neutral-50'
+                  key={idx}
+                  className={`min-h-[120px] bg-white p-2.5 flex flex-col transition-colors hover:bg-neutral-50/50 ${
+                    !item.isCurrentMonth ? 'bg-neutral-50/30 text-neutral-300' : 'text-neutral-800'
                   }`}
                 >
-                  <span
-                    className={`font-medium text-xs ${tdy ? 'text-brand-700' : 'text-neutral-700'}`}
-                  >
-                    {d}
-                  </span>
-                  {evs.slice(0, 3).map((e) => (
-                    <div
-                      key={e.id}
-                      className={`mt-[2px] w-2 h-2 rounded-full ${categoryColor(e.category ?? 'other')}`}
-                    />
-                  ))}
-                  {evs.length > 3 && (
-                    <div className="mt-[2px] text-[9px] text-neutral-400">+{evs.length - 3}</div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Week view */}
-      {view === 'week' && (
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <button onClick={() => navigateMonth(-7)} className="p-2 text-neutral-500 hover:text-neutral-900">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-lg font-semibold text-neutral-900">
-              Week of {formatLagos(new Date(year, month, 1 - firstDayOfMonth), { month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
-            <button onClick={() => navigateMonth(7)} className="ml-2 p-2 text-neutral-500 hover:text-neutral-900">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="grid grid-cols-7 gap-1">
-            {weekDays.map((wd, i) => {
-              const d = new Date(year, month, 1 + i - firstDayOfMonth)
-              const evs = dayEvents(d.getDate())
-              return (
-                <div key={i} className="border border-neutral-200 rounded-lg bg-white overflow-hidden flex flex-col">
-                  <div className="px-2 py-1 bg-neutral-50 border-b border-neutral-100">
-                    <div className="text-[10px] font-medium text-neutral-500 uppercase">{wd}</div>
-                    <div className="text-[11px] font-medium text-neutral-700">{d.getDate()}</div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span
+                      className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                        isToday ? 'bg-indigo-600 text-white shadow-sm' : item.isCurrentMonth ? 'text-neutral-800' : 'text-neutral-300'
+                      }`}
+                    >
+                      {item.date.getDate()}
+                    </span>
                   </div>
-                  <div className="flex-1 p-1 space-y-1 overflow-hidden">
-                    {evs.map((e) => (
+
+                  <div className="flex-1 space-y-1 overflow-y-auto max-h-[90px]">
+                    {dayEvents.map((ev) => (
                       <div
-                        key={e.id}
-                        className="px-2 py-1 rounded text-[10px] font-medium text-white truncate border border-white/40"
-                        style={{ backgroundColor: categoryColor(e.category ?? 'other').replace('bg-', 'text-') === 'text-transparent' ? '' : categoryColor(e.category ?? 'other').replace('500', '600') }}
+                        key={ev.id}
+                        className={`group relative text-[11px] px-2 py-1 rounded-lg border font-medium truncate flex items-center justify-between ${
+                          categoryColors[ev.category] || 'bg-neutral-50 text-neutral-700 border-neutral-200'
+                        }`}
+                        title={`${ev.event_time} - ${ev.title}`}
                       >
-                        {e.title}
+                        <span className="truncate">{ev.title}</span>
+                        {!ev.is_international && (
+                          <button
+                            onClick={() => handleDelete(ev.id)}
+                            className="opacity-0 group-hover:opacity-100 ml-1 text-neutral-400 hover:text-rose-600 transition-opacity"
+                          >
+                            ×
+                          </button>
+                        )}
                       </div>
                     ))}
-                    {evs.length === 0 && <div className="text-[9px] text-neutral-300">—</div>}
                   </div>
                 </div>
-              )
+              );
             })}
           </div>
         </div>
       )}
 
-      {/* Agenda view */}
-      {view === 'agenda' && (
-        <div className="card p-4">
-          <div className="space-y-3">
-            {filteredEvents.length === 0 ? (
-              <div className="text-center py-12 text-neutral-500">
-                <Calendar className="w-8 h-8 mx-auto text-neutral-300 mb-3" />
-                <p className="text-sm text-neutral-500">No events found.</p>
-              </div>
-            ) : (
-              filteredEvents.map((e) => {
-                const start = e.event_date ?? e.start_at?.slice(0, 10)
-                const time = e.event_time ?? e.start_at?.slice(11, 16)
-                return (
-                  <div
-                    key={e.id}
-                    className="flex items-start gap-3 p-3 rounded-lg border border-neutral-100 bg-white hover:bg-neutral-50 transition-colors group"
-                  >
-                    <div
-                      className={`p-1.5 rounded-lg ${categoryColor(e.category ?? 'other')} text-white`}
-                    >
-                      <Clock className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline gap-2">
-                        <div className="text-sm font-semibold text-neutral-900 truncate">{e.title}</div>
-                        <span className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 border ${categoryColor(e.category ?? 'other').replace('500', '100')} ${categoryColor(e.category ?? 'other').replace('500', '700')}`}>
-                          {EVENT_CATEGORIES.find((c) => c.key === e.category)?.label ?? e.category}
+      {(view === 'Agenda' || view === 'Week') && (
+        <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden divide-y divide-neutral-100">
+          {filteredEvents.length === 0 ? (
+            <div className="p-12 text-center text-neutral-400 text-xs font-medium">
+              No events found matching your filter.
+            </div>
+          ) : (
+            filteredEvents.map((ev) => (
+              <div key={ev.id} className="p-5 flex items-center justify-between hover:bg-neutral-50/50 transition-colors">
+                <div className="flex items-center gap-4">
+                  <div className="text-center bg-indigo-50 text-indigo-700 rounded-xl p-2.5 min-w-[55px]">
+                    <span className="block text-[10px] font-bold uppercase">
+                      {new Date(ev.event_date).toLocaleDateString('en-US', { month: 'short' })}
+                    </span>
+                    <span className="block text-base font-extrabold">
+                      {new Date(ev.event_date).getDate()}
+                    </span>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-neutral-900">{ev.title}</h4>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-neutral-500">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        {ev.event_time}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${categoryColors[ev.category]}`}>
+                        {ev.category}
+                      </span>
+                      {ev.is_international && (
+                        <span className="text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full">
+                          Global Civic Event
                         </span>
-                      </div>
-                      {e.description && (
-                        <div className="text-xs text-neutral-500 mt-0.5 truncate">{e.description}</div>
-                      )}
-                      <div className="text-xs text-neutral-400 mt-1">
-                        {start ? formatLagos(start, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                        {time ? ` • ${time}` : ''}
-                        {e.location ? ` • ${e.location}` : ''}
-                        {e.profiles?.full_name && ` • by ${e.profiles.full_name}`}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {canManage && (
-                        <button
-                          onClick={() => openEdit(e)}
-                          className="p-1.5 rounded text-neutral-400 hover:text-brand-600 hover:bg-neutral-100"
-                          title="Edit"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                      )}
-                      {canManage && (
-                        <button
-                          onClick={() => deleteEvent(e.id)}
-                          className="p-1.5 rounded text-neutral-400 hover:text-red-600 hover:bg-red-50"
-                          title="Delete"
-                          disabled={deletingId === e.id}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
                       )}
                     </div>
                   </div>
-                )
-              })
-            )}
-          </div>
+                </div>
+
+                {!ev.is_international && (
+                  <button
+                    onClick={() => handleDelete(ev.id)}
+                    className="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))
+          )}
         </div>
       )}
 
-      {/* Create / Edit modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => {
-          if (e.target === e.currentTarget) setModalOpen(false)
-        }}>
-          <div className="bg-white rounded-xl border border-neutral-200 shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold text-neutral-900">
-                {editing ? 'Edit event' : 'Create event'}
-              </h3>
+      {showModal && (
+        <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <form onSubmit={handleAddEvent} className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-4 border-b border-neutral-100 flex justify-between items-center">
+              <h3 className="text-base font-bold text-neutral-900">Create New Event</h3>
+              <button type="button" onClick={() => setShowModal(false)} className="text-neutral-400 hover:text-neutral-600 text-xl">&times;</button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-neutral-600 mb-1">Event Title</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="E.g., Quarterly Board Review"
+                  value={newEvent.title}
+                  onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-neutral-600 mb-1">Date</label>
+                  <input
+                    required
+                    type="date"
+                    value={newEvent.event_date}
+                    onChange={(e) => setNewEvent({ ...newEvent, event_date: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-600 mb-1">Time</label>
+                  <input
+                    required
+                    type="time"
+                    value={newEvent.event_time}
+                    onChange={(e) => setNewEvent({ ...newEvent, event_time: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-600 mb-1">Category</label>
+                <select
+                  value={newEvent.category}
+                  onChange={(e) => setNewEvent({ ...newEvent, category: e.target.value as any })}
+                  className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-medium text-neutral-700 outline-none focus:border-indigo-500"
+                >
+                  <option value="work">Work</option>
+                  <option value="meeting">Meeting</option>
+                  <option value="important">Important</option>
+                  <option value="personal">Personal</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-neutral-50 flex justify-end gap-2 border-t border-neutral-100">
               <button
-                onClick={() => setModalOpen(false)}
-                className="p-1 text-neutral-400 hover:text-neutral-600"
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 text-xs font-bold text-neutral-600 hover:bg-neutral-200/50 rounded-xl transition-colors"
               >
-                <X className="w-5 h-5" />
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition-colors"
+              >
+                Save Event
               </button>
             </div>
-            <form onSubmit={(e) => {
-              e.preventDefault()
-              const fd = new FormData(e.target as HTMLFormElement)
-              saveEvent({
-                title: fd.get('title') as string,
-                description: fd.get('description') as string,
-                category: fd.get('category') as string,
-                eventDate: fd.get('eventDate') as string,
-                eventTime: fd.get('eventTime') as string,
-                endDate: fd.get('endDate') as string,
-                endTime: fd.get('endTime') as string,
-                location: fd.get('location') as string,
-              })
-            }}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Event title</label>
-                  <input
-                    name="title"
-                    defaultValue={editing?.title ?? ''}
-                    className="w-full px-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Category</label>
-                  <select
-                    name="category"
-                    defaultValue={editing?.category ?? 'meeting'}
-                    className="w-full px-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                  >
-                    {EVENT_CATEGORIES.map((c) => (
-                      <option key={c.key} value={c.key}>{c.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">Date</label>
-                    <input
-                      name="eventDate"
-                      type="date"
-                      defaultValue={editing?.event_date ?? todayStr}
-                      className="w-full px-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">Time</label>
-                    <input
-                      name="eventTime"
-                      type="time"
-                      defaultValue={editing?.event_time ?? '09:00'}
-                      className="w-full px-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">End date</label>
-                    <input
-                      name="endDate"
-                      type="date"
-                      defaultValue={editing?.event_date ?? todayStr}
-                      className="w-full px-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">End time</label>
-                    <input
-                      name="endTime"
-                      type="time"
-                      defaultValue={editing?.event_time ?? '10:00'}
-                      className="w-full px-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                      required
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Location</label>
-                  <input
-                    name="location"
-                    defaultValue={editing?.location ?? ''}
-                    className="w-full px-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                    placeholder="Optional location"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Description</label>
-                  <textarea
-                    name="description"
-                    defaultValue={editing?.description ?? ''}
-                    rows={3}
-                    className="w-full px-3 py-1.5 rounded border border-neutral-200 bg-white text-sm text-neutral-900 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                    placeholder="Optional description"
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-1.5 rounded border border-neutral-200 bg-white text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-1.5 rounded bg-brand-600 border-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-brand-600/20"
-                >
-                  {saving ? 'Saving…' : 'Save event'}
-                </button>
-              </div>
-            </form>
-          </div>
+          </form>
         </div>
       )}
     </div>
-  )
+  );
 }
