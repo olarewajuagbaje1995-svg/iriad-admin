@@ -133,7 +133,8 @@ export default function KnowledgeBasePage() {
       ])
       if (error) throw error
 
-      const sourceId = (sourceData as unknown as any[])?.[0]?.id
+      const sourceId = (sourceData as unknown as { id: string }[])?.[0]?.id
+      if (!sourceId) throw new Error('No source returned')
 
       // Run local ingestion pipeline (extraction → chunking → embedding → storage)
       let indexed = false
@@ -548,7 +549,7 @@ export default function KnowledgeBasePage() {
                   <div className="flex-1">
                     <div className="text-sm font-medium text-neutral-900">{s.title}</div>
                     <div className="text-xs text-neutral-500">
-                      {s.source_type} - {(s.knowledge_collections as any)?.title ?? 'Uncategorized'} - Audience: {s.audience.replace('_', ' ')}
+                      {s.source_type} - Audience: {s.audience.replace('_', ' ')}
                     </div>
                     {s.storage_path && (
                       <div className="text-[10px] text-neutral-400 mt-1">File: {s.storage_path.split('/').pop()}</div>
