@@ -131,6 +131,7 @@ export default function KnowledgeBasePage() {
           created_by: user.id,
         },
       ])
+      .select()
       if (error) throw error
 
       const sourceId = (sourceData as unknown as { id: string }[])?.[0]?.id
