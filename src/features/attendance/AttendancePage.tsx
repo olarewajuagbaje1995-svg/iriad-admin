@@ -30,7 +30,7 @@ export default function AttendancePage() {
       </div>
 
       {/* Today's status card */}
-      <div className="card p-6">
+      <div className="card p-6 rounded-xl shadow-sm border-neutral-100">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wider">Today — {formatLagos(new Date(), { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h3>
@@ -45,7 +45,7 @@ export default function AttendancePage() {
             )}
             {!checkedIn && isWorkday && checkInWindowOpen && (
               <button
-                className="btn-primary w-full lg:w-auto"
+                className="btn-primary w-full lg:w-auto bg-green-600 hover:bg-green-700 border-green-600 text-white shadow-sm shadow-green-600/20"
                 onClick={() => checkIn('office')}
                 disabled={loading || !checkInWindowOpen}
               >
@@ -59,7 +59,7 @@ export default function AttendancePage() {
             )}
             {checkedIn && !checkedOut && (
               <button
-                className="btn-primary w-full lg:w-auto"
+                className="btn-primary w-full lg:w-auto bg-red-600 hover:bg-red-700 border-red-600 text-white shadow-sm shadow-red-600/20"
                 onClick={() => checkOut()}
                 disabled={loading}
               >
@@ -101,8 +101,8 @@ export default function AttendancePage() {
       )}
 
       {/* Attendance history */}
-      <div className="card p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="card p-6 rounded-xl shadow-sm border-neutral-100">
+        <div className="flex items-center justify-between mb-6">
           <h3 className="text-sm font-semibold text-neutral-900 uppercase tracking-wider">Recent attendance</h3>
           <button className="btn-ghost text-xs" onClick={refresh}>
             <History className="w-3 h-3 mr-1" /> Refresh
@@ -117,21 +117,21 @@ export default function AttendancePage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="text-left border-b border-neutral-200 text-neutral-500 text-xs uppercase">
-                  <th className="pb-3">Date</th>
-                  <th className="pb-3">Type</th>
-                  <th className="pb-3">Check-in</th>
-                  <th className="pb-3">Check-out</th>
-                  <th className="pb-3">Status</th>
+                <tr className="text-left border-b border-neutral-200 bg-neutral-50 text-neutral-500 text-xs uppercase">
+                  <th className="pb-4">Date</th>
+                  <th className="pb-4">Type</th>
+                  <th className="pb-4">Check-in</th>
+                  <th className="pb-4">Check-out</th>
+                  <th className="pb-4">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {records.map((r) => (
-                  <tr key={r.id} className="border-b border-neutral-100 hover:bg-neutral-50">
-                    <td className="py-3 text-neutral-900">{formatLagos(r.attendance_date, { year: 'numeric', month: 'short', day: 'numeric' })}</td>
-                    <td className="py-3 text-neutral-600 capitalize">{r.attendance_type.replace('_', ' ')}</td>
-                    <td className="py-3">{r.check_in_at ? formatLagos(r.check_in_at) : '—'}</td>
-                    <td className="py-3">{r.check_out_at ? formatLagos(r.check_out_at) : '—'}</td>
+                  <tr key={r.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition-all">
+                    <td className="py-4 text-neutral-900">{formatLagos(r.attendance_date, { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                    <td className="py-4 text-neutral-600 capitalize">{r.attendance_type.replace('_', ' ')}</td>
+                    <td className="py-4">{r.check_in_at ? formatLagos(r.check_in_at) : '—'}</td>
+                    <td className="py-4">{r.check_out_at ? formatLagos(r.check_out_at) : '—'}</td>
                     <td className="py-3">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
                         r.status === 'checked_out' ? 'bg-green-50 text-green-700' :

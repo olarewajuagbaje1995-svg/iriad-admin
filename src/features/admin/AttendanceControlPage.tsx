@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Clock, ToggleRight, Check, User } from 'lucide-react'
+import { Clock, ToggleRight, Check, User, X } from 'lucide-react'
 import { formatLagos } from '@/lib/dates'
 import { ROLE_LABELS, type Role } from '@/config/brand'
 import { isAdminOrDirector } from '@/lib/permissions'
@@ -111,11 +111,11 @@ export default function AttendanceControlPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="card p-5">
+        <div className="card p-6 rounded-xl shadow-sm border-neutral-100">
           <h3 className="text-sm font-semibold text-neutral-900 uppercase tracking-wider mb-4">Morning check-in</h3>
           <button
-            className={`w-full py-3 rounded-lg border transition-colors ${
-              morningOpen ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-neutral-200 text-neutral-700 hover:bg-brand-50 hover:border-brand-600'
+            className={`w-full py-3.5 rounded-xl border transition-all ${
+              morningOpen ? 'bg-brand-600 border-brand-600 text-white shadow-sm shadow-brand-600/20' : 'bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-brand-600'
             }`}
             onClick={() => toggleWindow('morning')}
           >
@@ -134,11 +134,11 @@ export default function AttendanceControlPage() {
           )}
         </div>
 
-        <div className="card p-5">
+        <div className="card p-6 rounded-xl shadow-sm border-neutral-100">
           <h3 className="text-sm font-semibold text-neutral-900 uppercase tracking-wider mb-4">Evening sign-out</h3>
           <button
-            className={`w-full py-3 rounded-lg border transition-colors ${
-              signOutOpen ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-neutral-200 text-neutral-700 hover:bg-brand-50 hover:border-brand-600'
+            className={`w-full py-3.5 rounded-xl border transition-all ${
+              signOutOpen ? 'bg-brand-600 border-brand-600 text-white shadow-sm shadow-brand-600/20' : 'bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50 hover:border-brand-600'
             }`}
             onClick={() => toggleWindow('sign_out')}
           >
@@ -157,15 +157,15 @@ export default function AttendanceControlPage() {
           )}
         </div>
 
-        <div className="card p-5">
+        <div className="card p-6 rounded-xl shadow-sm border-neutral-100">
           <h3 className="text-sm font-semibold text-neutral-900 uppercase tracking-wider mb-4">Today</h3>
           <p className="text-xs text-neutral-500 mb-2">{formatLagos(new Date(), { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
       </div>
 
       {/* Today's attendance table */}
-      <div className="card p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="card p-6 rounded-xl shadow-sm border-neutral-100">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="text-sm font-semibold text-neutral-900 uppercase tracking-wider">Today's attendance</h3>
             <p className="text-xs text-neutral-500">Records for {formatLagos(new Date(), { year: 'numeric', month: 'short', day: 'numeric' })}</p>
@@ -177,25 +177,26 @@ export default function AttendanceControlPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="text-left border-b border-neutral-200 text-neutral-500 text-xs uppercase">
-                <th className="pb-3">Full name</th>
-                <th className="pb-3">Role</th>
-                <th className="pb-3">Time in</th>
-                <th className="pb-3">Signature</th>
+              <tr className="text-left border-b border-neutral-200 bg-neutral-50 text-neutral-500 text-xs uppercase">
+                <th className="pb-4 pl-4">Full name</th>
+                <th className="pb-4">Role</th>
+                <th className="pb-4">Time in</th>
+                <th className="pb-4">Status</th>
               </tr>
             </thead>
             <tbody>
               {todayRecords.length === 0 ? (
-                <tr><td colSpan={4} className="py-10 text-center text-neutral-500">No attendance records for today yet.</td></tr>
+                <tr><td colSpan={4} className="py-12 text-center text-neutral-500">No attendance records for today yet.</td></tr>
               ) : (
                 todayRecords.map((r) => {
                   const profile = (r as any).profiles
                   const role = (profile?.role ?? 'staff') as Role
                   const checkedIn = !!r.check_in_at
+                  const checkedOut = !!r.check_out_at
                   return (
-                    <tr key={r.id} className="border-b border-neutral-100 hover:bg-neutral-50">
-                      <td className="py-3 text-neutral-900">{profile?.full_name ?? '—'}</td>
-                      <td className="py-3">
+                    <tr key={r.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition-all">
+                      <td className="py-4 pl-4 text-neutral-900 font-medium">{profile?.full_name}</td>
+                      <td className="py-4">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${
                           role === 'admin' ? 'bg-blue-50 text-blue-700 border-blue-100' :
                           role === 'director' ? 'bg-purple-50 text-purple-700 border-purple-100' :
@@ -204,15 +205,19 @@ export default function AttendanceControlPage() {
                           <User className="w-3 h-3 mr-1" /> {ROLE_LABELS[role]}
                         </span>
                       </td>
-                      <td className="py-3">
+                      <td className="py-4">
                         {r.check_in_at ? formatLagos(r.check_in_at) : (
                           <span className="text-neutral-400">—</span>
                         )}
                       </td>
-                      <td className="py-3">
-                        {checkedIn ? (
-                          <span className="flex items-center gap-1 text-xs">
-                            <Check className="w-3 h-3 text-green-600" /> Signed in
+                      <td className="py-4">
+                        {checkedOut ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-100 rounded-full px-2 py-1">
+                            <X className="w-3 h-3" /> Signed out
+                          </span>
+                        ) : checkedIn ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 bg-green-50 border border-green-100 rounded-full px-2 py-1">
+                            <Check className="w-3 h-3" /> Signed in
                           </span>
                         ) : (
                           <span className="text-neutral-400">—</span>
@@ -227,7 +232,7 @@ export default function AttendanceControlPage() {
         </div>
       </div>
 
-      <div className="card p-5">
+      <div className="card p-6 rounded-xl shadow-sm border-neutral-100">
         <h3 className="text-sm font-semibold text-neutral-900 uppercase tracking-wider mb-4">Recent sessions</h3>
         <div className="space-y-2">
           {sessions.length === 0 ? (
