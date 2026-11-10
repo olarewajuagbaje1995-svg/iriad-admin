@@ -17,6 +17,10 @@ export default function AttendanceControlPage() {
     try {
       const { data } = await supabase.from('attendance_sessions').select('*').order('work_date', { ascending: false }).limit(30)
       setSessions(data ?? [])
+      const today = new Date().toISOString().slice(0, 10)
+      const todaySession = (data ?? []).find((s) => s.work_date === today)
+      setMorningOpen(!!(todaySession?.morning_open_override || todaySession?.morning_opened_at))
+      setSignOutOpen(!!(todaySession?.sign_out_open_override || todaySession?.sign_out_opened_at))
     } catch (e: any) {
       console.error(e)
     } finally {
@@ -24,25 +28,25 @@ export default function AttendanceControlPage() {
     }
   }
 
-  const toggleMorning = async () => {
+  const toggleWindow = async (kind: 'morning' | 'sign_out') => {
     try {
       const today = new Date().toISOString().slice(0, 10)
-      const { data: existing } = await supabase.from('attendance_sessions').select('*').eq('work_date', today).maybeSingle()
-      if (existing) {
-        await supabase.from('attendance_sessions').update({ morning_open_override: !morningOpen, morning_opened_at: !morningOpen ? new Date().toISOString() : null }).eq('id', existing.id)
-      } else {
-        await supabase.from('attendance_sessions').insert([{ work_date: today, morning_open_override: !morningOpen, morning_opened_at: !morningOpen ? new Date().toISOString() : null }])
-      }
-      setMorningOpen(!morningOpen)
+      const open = kind === 'morning' ? !morningOpen : !signOutOpen
+      const { error: fnError } = await supabase.functions.invoke('attendance-control', {
+        body: {
+          action: kind === 'morning' ? 'toggle_morning' : 'toggle_sign_out',
+          work_date: today,
+          open,
+        },
+      })
+      if (fnError) throw fnError
+      if (kind === 'morning') setMorningOpen(open)
+      else setSignOutOpen(open)
       load()
     } catch (e: any) {
       console.error(e)
+      alert(e.message || 'Failed to update attendance window')
     }
-  }
-
-  const toggleSignOut = async () => {
-    setSignOutOpen(!signOutOpen)
-    load()
   }
 
   if (loading) return <div className="p-6">Loading attendance control…</div>
@@ -62,7 +66,7 @@ export default function AttendanceControlPage() {
             className={`w-full py-3 rounded-lg border transition-colors ${
               morningOpen ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-neutral-200 text-neutral-700 hover:bg-brand-50 hover:border-brand-600'
             }`}
-            onClick={toggleMorning}
+            onClick={() => toggleWindow('morning')}
           >
             <Clock className="w-4 h-4 mr-2" /> {morningOpen ? 'Close check-in window' : 'Open check-in window'}
           </button>
@@ -76,7 +80,7 @@ export default function AttendanceControlPage() {
             className={`w-full py-3 rounded-lg border transition-colors ${
               signOutOpen ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-neutral-200 text-neutral-700 hover:bg-brand-50 hover:border-brand-600'
             }`}
-            onClick={toggleSignOut}
+            onClick={() => toggleWindow('sign_out')}
           >
             <ToggleRight className="w-4 h-4 mr-2" /> {signOutOpen ? 'Close sign-out' : 'Open sign-out'}
           </button>

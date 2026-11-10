@@ -1,12 +1,19 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAttendance } from '@/hooks/useAttendance'
 import { Clock, CheckCircle2, Activity, History } from 'lucide-react'
 import { formatLagos, isLagosWorkday } from '@/lib/dates'
 
 export default function AttendancePage() {
-  const { records, todayRecord, loading, error, checkIn, checkOut, refresh } = useAttendance()
+  const { records, todayRecord, loading, error, checkIn, checkOut, refresh, getStatus } = useAttendance()
   const [errorDismissed, setErrorDismissed] = useState(false)
+  const [checkInWindowOpen, setCheckInWindowOpen] = useState(true)
   const isWorkday = isLagosWorkday(new Date())
+
+  useEffect(() => {
+    getStatus().then((data) => {
+      setCheckInWindowOpen(data?.check_in_window_open ?? false)
+    })
+  }, [getStatus])
 
   if (loading) return <div className="p-6">Loading attendance…</div>
 
@@ -36,13 +43,18 @@ export default function AttendancePage() {
             {!isWorkday && (
               <button className="btn-ghost w-full lg:w-auto" disabled>Not a workday</button>
             )}
-            {!checkedIn && isWorkday && (
+            {!checkedIn && isWorkday && checkInWindowOpen && (
               <button
                 className="btn-primary w-full lg:w-auto"
                 onClick={() => checkIn('office')}
-                disabled={loading}
+                disabled={loading || !checkInWindowOpen}
               >
                 <Clock className="w-4 h-4 mr-2" /> Check in
+              </button>
+            )}
+            {!checkedIn && isWorkday && !checkInWindowOpen && (
+              <button className="btn-ghost w-full lg:w-auto" disabled>
+                <Clock className="w-4 h-4 mr-2" /> Check-in window closed
               </button>
             )}
             {checkedIn && !checkedOut && (

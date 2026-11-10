@@ -31,6 +31,7 @@ export function useAttendance() {
 
   useEffect(() => { load() }, [load])
 
+  /** Check in via the attendance-control Edge Function (server-enforced window, service-role insert). */
   const checkIn = async (type: Attendance['attendance_type'] = 'office') => {
     const today = lagosToday()
     if (todayRecord) {
@@ -38,10 +39,9 @@ export function useAttendance() {
       return null
     }
 
-    // Try server-side Edge Function first (enforces check-in window, holidays, etc.)
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('attendance-checkin', {
-        body: { attendance_type: type, work_date: today },
+      const { data, error: fnError } = await supabase.functions.invoke('attendance-control', {
+        body: { action: 'check_in', attendance_type: type, work_date: today },
       })
       if (fnError) throw fnError
       if (data?.error) {
@@ -52,41 +52,52 @@ export function useAttendance() {
       setRecords([data.attendance, ...records])
       return data.attendance
     } catch (fnErr: any) {
-      // Edge Function not available (e.g. local dev without Supabase) — fall back to direct insert
-      // The DB RLS and constraints still enforce rules server-side.
-      const { data, error: err } = await supabase
-        .from('attendance')
-        .insert([{ attendance_date: today, attendance_type: type, status: 'checked_in', check_in_at: new Date().toISOString() }])
-        .select()
-        .single()
-      if (err) {
-        setError(err.message)
-        return null
-      }
-      setTodayRecord(data)
-      setRecords([data, ...records])
-      return data
+      setError(fnErr.message || 'Check-in failed')
+      return null
     }
   }
 
+  /** Sign out via the attendance-control Edge Function (server-enforced window, service-role update). */
   const checkOut = async () => {
     if (!todayRecord) {
       setError('No check-in record for today')
       return null
     }
-    const { data, error: err } = await supabase
-      .from('attendance')
-      .update({ check_out_at: new Date().toISOString(), status: 'checked_out' })
-      .eq('id', todayRecord.id!)
-      .select()
-      .single()
-    if (err) {
-      setError(err.message)
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('attendance-control', {
+        body: { action: 'sign_out', work_date: todayRecord.attendance_date },
+      })
+      if (fnError) throw fnError
+      if (data?.error) {
+        setError(data.error)
+        return null
+      }
+      setTodayRecord(data.attendance)
+      return data.attendance
+    } catch (fnErr: any) {
+      setError(fnErr.message || 'Sign-out failed')
       return null
     }
-    setTodayRecord(data)
-    return data
   }
 
-  return { records, todayRecord, loading, error, checkIn, checkOut, refresh: load }
+  /** Fetch today's record + window state from the Edge Function. */
+  const getStatus = async (work_date?: string) => {
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('attendance-control', {
+        body: { action: 'get_status', work_date },
+      })
+      if (fnError) throw fnError
+      if (data?.error) {
+        setError(data.error)
+        return null
+      }
+      return data
+    } catch (fnErr: any) {
+      setError(fnErr.message || 'Failed to load status')
+      return null
+    }
+  }
+
+  return { records, todayRecord, loading, error, checkIn, checkOut, getStatus, refresh: load }
 }
